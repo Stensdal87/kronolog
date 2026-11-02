@@ -77,6 +77,8 @@ pub struct TimeSnapperApp {
     last_heartbeat: Instant,
     started: Instant,
     window_level_applied: bool,
+    /// Om det er tjekket, at vinduet endte på en skærm efter opstart.
+    position_verified: bool,
     call_dialog_open: bool,
     /// Antal ikke-registrerede opkald sidst vi kiggede. Kommer der flere, åbnes dialogen.
     seen_unassigned: usize,
@@ -172,6 +174,7 @@ impl TimeSnapperApp {
             last_heartbeat: Instant::now(),
             started: Instant::now(),
             window_level_applied: false,
+            position_verified: false,
             call_dialog_open: false,
             seen_unassigned: 0,
             search: String::new(),
@@ -244,27 +247,35 @@ impl TimeSnapperApp {
     /// hver genstart. eframe har bedt om den gemte placering og fået den plus en
     /// forskydning; bed derfor om den gemte placering minus forskydningen.
     fn restore_window_position(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
-        if self.move_to_primary_if_offscreen(ctx, frame) {
+        if self.move_to_primary_if_offscreen(ctx, frame, false) {
             return;
         }
         let Some([x, y]) = self.data.window_pos else { return };
         let Some(inner) = ctx.input(|i| i.viewport().inner_rect) else { return };
         let wanted = Pos2::new(x, y);
         let drift = wanted - inner.min;
+        if drift.length() <= 1.0 {
+            return;
+        }
         // eframe bad om den gemte placering og fik den plus titellinjen: det er
         // netop den justering, senere flytninger skal have.
-        if drift.length() > 1.0 && drift.length() < 100.0 {
+        if drift.length() < 100.0 {
             self.move_correction = drift;
-        }
-        if drift.length() > 1.0 {
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(wanted + drift));
+        } else {
+            // Langt fra: eframe har selv flyttet vinduet, f.eks. ind fra Windows'
+            // "minimeret"-placering (−32000), hvis programmet blev lukket
+            // minimeret. Så er afstanden ikke en titellinje, og lagt til igen
+            // ville den sende vinduet ud over kanten (#12).
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(wanted));
         }
     }
 
     /// Ligger vinduet (eller den gemte placering) uden for alle tilsluttede
     /// skærme, f.eks. fordi en ekstra skærm er taget fra, flyttes det til midten
-    /// af den primære skærm. Returnerer true, hvis vinduet blev flyttet.
-    fn move_to_primary_if_offscreen(&mut self, ctx: &egui::Context, frame: &eframe::Frame) -> bool {
+    /// af den primære skærm. `actual` tjekker hvor vinduet står nu i stedet for
+    /// den gemte placering. Returnerer true, hvis vinduet blev flyttet.
+    fn move_to_primary_if_offscreen(&mut self, ctx: &egui::Context, frame: &eframe::Frame, actual: bool) -> bool {
         use winit::dpi::{PhysicalPosition, PhysicalSize};
 
         let Some(window) = frame.winit_window() else { return false };
@@ -276,7 +287,7 @@ impl TimeSnapperApp {
         let size = Vec2::new(size.width as f32, size.height as f32);
         // Den placering vinduet skal have: den gemte, ellers den nuværende (i pixels).
         let ppp = ctx.pixels_per_point();
-        let wanted = match self.data.window_pos {
+        let wanted = match self.data.window_pos.filter(|_| !actual) {
             Some([x, y]) => Pos2::new(x * ppp, y * ppp),
             None => match window.inner_position() {
                 Ok(p) => Pos2::new(p.x as f32, p.y as f32),
@@ -1037,6 +1048,19 @@ impl eframe::App for TimeSnapperApp {
                 ctx.request_repaint_after(delay);
             }
         }
+        // Sikkerhedsnet: endte vinduet alligevel uden for skærmene, hentes det
+        // ind, når flytningerne ovenfor har sat sig.
+        if self.window_level_applied && !self.position_verified {
+            let delay = StdDuration::from_millis(1500);
+            if self.started.elapsed() >= delay {
+                self.position_verified = true;
+                if ctx.input(|i| i.viewport().minimized) != Some(true) {
+                    self.move_to_primary_if_offscreen(&ctx, frame, true);
+                }
+            } else {
+                ctx.request_repaint_after(delay - self.started.elapsed());
+            }
+        }
 
         // Tegn igen præcis når uret skifter sekund, så prikken tikker jævnt.
         if let Some(active) = &self.data.active {
@@ -1537,6 +1561,7 @@ impl TimeSnapperApp {
         // sæt dem igen efter et øjeblik, som ved opstart.
         self.started = Instant::now();
         self.window_level_applied = false;
+        self.position_verified = false;
         ctx.request_repaint();
     }
 

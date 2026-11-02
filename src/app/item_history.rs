@@ -22,6 +22,8 @@ pub(super) struct ItemHistory {
     /// En dag i den viste periode.
     anchor: NaiveDate,
     view: HistoryView,
+    /// Placering (midt på hovedvinduets skærm), fundet når vinduet åbner.
+    position: Option<Option<Pos2>>,
     /// Rettelse og eksport vises i dette vindue, ikke i hovedvinduet.
     editor: Option<EntryEditor>,
     export: Option<ExportDialog>,
@@ -34,6 +36,7 @@ impl ItemHistory {
             period: Period::Month,
             anchor: Local::now().date_naive(),
             view: HistoryView::Summary,
+            position: None,
             editor: None,
             export: None,
         }
@@ -103,11 +106,21 @@ impl TimeSnapperApp {
             return;
         }
         let level = if self.always_on_top { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal };
-        let builder = egui::ViewportBuilder::default()
+        let size = Vec2::new(460.0, 540.0);
+        let position = self
+            .item_history
+            .as_mut()
+            .and_then(|h| *h.position.get_or_insert_with(|| centered_on_screen(frame, size)));
+        let mut builder = egui::ViewportBuilder::default()
             .with_title(tr!("item.window_title", name = self.data.scope_label(scope)))
-            .with_inner_size([460.0, 540.0])
+            .with_inner_size(size)
             .with_min_inner_size([340.0, 300.0])
             .with_window_level(level);
+        // Ellers vælger Windows selv et sted (#13). Samme placering hver frame,
+        // så vinduet stadig kan flyttes.
+        if let Some(position) = position {
+            builder = builder.with_position(position);
+        }
         let mut close = false;
         ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("item_history"), builder, |ui, _class| {
             close |= ui.input(|i| i.viewport().close_requested());
@@ -374,6 +387,17 @@ impl TimeSnapperApp {
             history.editor = open_editor;
         }
     }
+}
+
+/// Placering (i punkter) der lægger et vindue af størrelsen `size` midt på den
+/// skærm, hovedvinduet står på.
+fn centered_on_screen(frame: &eframe::Frame, size: Vec2) -> Option<Pos2> {
+    let window = frame.winit_window()?;
+    let monitor = window.current_monitor().or_else(|| window.primary_monitor())?;
+    let scale = monitor.scale_factor() as f32;
+    let screen = monitor_rect(&monitor);
+    let screen = egui::Rect::from_min_size((screen.min.to_vec2() / scale).to_pos2(), screen.size() / scale);
+    Some((screen.center() - size / 2.0).max(screen.min))
 }
 
 #[cfg(test)]
