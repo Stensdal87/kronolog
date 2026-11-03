@@ -1001,3 +1001,30 @@ month.11:
 month.12:
   da: "december"
   en: "December"
+history.col_billed_hint:
+  da: "Kryds af, når tiden er overført, f.eks. til fakturering."
+  en: "Check off when the time has been transferred, e.g. for billing."
+history.billed:
+  da: "Krydset af med %{time}."
+  en: "Checked off with %{time}."
+history.billed_changed:
+  da: "Krydset af med %{old}, men tiden er nu %{new}: %{diff}. Klik på ⚠ for at krydse af med den nye tid."
+  en: "Checked off with %{old}, but the time is now %{new}: %{diff}. Click ⚠ to check off with the new time."
+history.fold_hint:
+  da: "Klik for at se dagens registreringer"
+  en: "Click to see the day's entries"
+history.billed_missing:
+  da: "%{time} mangler at blive registreret"
+  en: "%{time} still to be registered"
+history.billed_too_much:
+  da: "%{time} for meget registreret"
+  en: "%{time} registered too much"
+settings.bar:
+  da: "Sammenfoldet bjælke"
+  en: "Collapsed bar"
+settings.bar_horizontal:
+  da: "Vandret"
+  en: "Horizontal"
+settings.bar_vertical:
+  da: "Lodret (til siden af skærmen)"
+  en: "Vertical (for the side of the screen)"

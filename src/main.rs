@@ -37,11 +37,17 @@ fn main() -> eframe::Result {
     let Some(instance) = single_instance::start(&single_instance::port_file(&path)) else {
         return Ok(());
     };
+    // Stod den lodrette bjælke fremme ved lukning, oprettes vinduet uden
+    // titellinje fra starten; fjernes den bagefter, kryber bjælken op.
+    let vertical_bar = data::Data::load(&path).is_ok_and(|d| d.compact && d.bar_vertical);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_decorations(!vertical_bar)
             .with_title(APP_NAME)
             .with_inner_size([320.0, 520.0])
             .with_min_inner_size([260.0, 300.0])
+            // Et lille værktøjsvindue; maksimeret giver det ingen mening (#14).
+            .with_maximize_button(false)
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png")).unwrap_or_default())
             .with_always_on_top(),
         ..Default::default()

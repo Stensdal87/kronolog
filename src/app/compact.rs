@@ -46,6 +46,8 @@ pub(super) struct PendingMove {
 }
 
 const BAR_SIZE: Vec2 = Vec2::new(400.0, 38.0);
+/// Den lodrette bjælke: den vandrette drejet 90°.
+const VERTICAL_BAR_SIZE: Vec2 = Vec2::new(38.0, 400.0);
 const PICKER_HEIGHT: f32 = 420.0;
 const NORMAL_SIZE: Vec2 = Vec2::new(320.0, 520.0);
 const NORMAL_MIN_SIZE: Vec2 = Vec2::new(260.0, 300.0);
@@ -75,11 +77,16 @@ impl TimeSnapperApp {
         }
         let (size, min_size) = match layout {
             WindowLayout::Normal => (self.data.normal_size.map_or(NORMAL_SIZE, Vec2::from), NORMAL_MIN_SIZE),
+            WindowLayout::Bar if self.data.bar_vertical => (VERTICAL_BAR_SIZE, Vec2::new(VERTICAL_BAR_SIZE.x, 240.0)),
             WindowLayout::Bar => (BAR_SIZE, Vec2::new(240.0, BAR_SIZE.y)),
             WindowLayout::Picker => (Vec2::new(BAR_SIZE.x, PICKER_HEIGHT), Vec2::new(240.0, 200.0)),
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(min_size));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        // Den lodrette bjælke er for smal til en titellinje (ikon, minimér og
+        // luk blev mast sammen); den flyttes ved at trække i den.
+        let decorated = !(layout == WindowLayout::Bar && self.data.bar_vertical);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(decorated));
 
         let mut top_left = inner.min;
         // Første gang ved opstart står vinduet allerede, hvor det blev gemt; dets
@@ -88,15 +95,26 @@ impl TimeSnapperApp {
             && let Some(screen) = current_screen(ctx, frame)
         {
             let in_lower_half = inner.center().y > screen.center().y;
-            let anchor_bottom = match (self.layout, layout) {
-                // Bjælken folder sig ud: vælg kant efter hvor bjælken står, og husk den.
-                (WindowLayout::Bar, _) => *self.bar_anchor_bottom.insert(in_lower_half),
-                // Tilbage til bjælken: samme kant som da den foldede sig ud.
-                (_, WindowLayout::Bar) => self.bar_anchor_bottom.unwrap_or(in_lower_half),
-                _ => in_lower_half,
+            let in_right_half = inner.center().x > screen.center().x;
+            let (anchor_bottom, anchor_right) = match (self.layout, layout) {
+                // Bjælken folder sig ud (eller drejes): vælg kanter efter hvor
+                // bjælken står, og husk dem.
+                (WindowLayout::Bar, _) => {
+                    (*self.bar_anchor_bottom.insert(in_lower_half), *self.bar_anchor_right.insert(in_right_half))
+                }
+                // Tilbage til bjælken: samme kanter som da den foldede sig ud.
+                (_, WindowLayout::Bar) => (
+                    self.bar_anchor_bottom.unwrap_or(in_lower_half),
+                    self.bar_anchor_right.unwrap_or(in_right_half),
+                ),
+                _ => (in_lower_half, in_right_half),
             };
             if anchor_bottom {
                 top_left.y = inner.max.y - size.y;
+            }
+            // Den lodrette bjælke står typisk i højre side: hold den ved kanten.
+            if self.data.bar_vertical && anchor_right {
+                top_left.x = inner.max.x - size.x;
             }
             top_left.x = top_left.x.clamp(screen.min.x, (screen.max.x - size.x).max(screen.min.x));
             top_left.y = top_left.y.clamp(screen.min.y, (screen.max.y - size.y).max(screen.min.y));
@@ -106,6 +124,7 @@ impl TimeSnapperApp {
         }
         self.layout = layout;
         self.layout_applied = true;
+        self.applied_vertical = self.data.bar_vertical;
         self.save();
     }
 
@@ -142,8 +161,8 @@ impl TimeSnapperApp {
         ctx.request_repaint_after(wait);
     }
 
-    /// Bjælken: status, tid, projekt og små ikonknapper.
-    pub(super) fn compact_bar(&mut self, ui: &mut egui::Ui) {
+    /// Bjælken: status, tid, projekt og små ikonknapper, vandret eller lodret.
+    pub(super) fn compact_bar(&mut self, ui: &mut egui::Ui, vertical: bool) {
         let active = self.data.active.as_ref();
         let running = active.is_some();
         let on_call = active.is_some_and(|a| a.project_id.is_none());
@@ -178,52 +197,107 @@ impl TimeSnapperApp {
         };
 
         let hint = |action| self.shortcut_hint(action);
-        let (fold_hover, stop_hover, call_hover, switch_hover) = (
-            format!("{}{}", tr!("bar.expand"), hint(Action::Fold)),
-            format!("{}{}", tr!("bar.stop"), hint(Action::Stop)),
-            format!("{call_hover}{}", hint(Action::Call)),
-            format!("{}{}", tr!("bar.switch_project"), hint(Action::SwitchProject)),
-        );
-        let pause_hover = format!("{pause_hover}{}", hint(Action::Pause));
+        let buttons = [
+            (BarButton::Fold, "🗖", format!("{}{}", tr!("bar.expand"), hint(Action::Fold)), true, false),
+            (BarButton::Stop, "⏹", format!("{}{}", tr!("bar.stop"), hint(Action::Stop)), running, false),
+            (BarButton::Pause, if on_pause { "▶" } else { "☕" }, format!("{pause_hover}{}", hint(Action::Pause)), true, on_pause),
+            (BarButton::Breathing, "💨", tr!("breathing.window_title"), true, false),
+            (BarButton::Call, "📞", format!("{call_hover}{}", hint(Action::Call)), true, on_call),
+            (BarButton::Switch, "🔀", format!("{}{}", tr!("bar.switch_project"), hint(Action::SwitchProject)), true, false),
+        ];
+        let show_breathing = on_pause && self.breathing.is_none();
+        let shown = buttons.iter().filter(|b| b.0 != BarButton::Breathing || show_breathing);
+        let label_hover = format!("{label}\n{}", tr!("bar.click_to_switch"));
+        // Hele bjælken er et håndtag: træk hvor som helst (undtagen på
+        // knapperne) for at flytte vinduet. Titellinjen er lille, især på den
+        // lodrette bjælke. Fladen lægges først, så knapperne ligger ovenpå.
+        let handle = ui.interact(ui.max_rect(), egui::Id::unique("bar_drag"), egui::Sense::drag());
+        let mut button_rects = Vec::new();
+        let mut clicked = None;
         let mut open_picker = false;
-        ui.horizontal_centered(|ui| {
-            let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
-            ui.painter().circle_filled(dot.center(), 5.0, color);
-            ui.label(RichText::new(time).monospace().size(15.0).strong());
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icon_button(ui, "🗖", &fold_hover, true, false) {
-                    self.data.compact = false;
-                    self.save();
-                }
-                if icon_button(ui, "⏹", &stop_hover, running, false) {
-                    self.data.stop();
-                    self.save();
-                }
-                if icon_button(ui, if on_pause { "▶" } else { "☕" }, &pause_hover, true, on_pause) {
-                    self.data.toggle_pause();
-                    self.save();
-                }
-                if on_pause && self.breathing.is_none() && icon_button(ui, "💨", &tr!("breathing.window_title"), true, false) {
-                    self.start_breathing();
-                }
-                if icon_button(ui, "📞", &call_hover, true, on_call) {
-                    self.data.toggle_call();
-                    self.save();
-                }
-                if icon_button(ui, "🔀", &switch_hover, true, false) {
-                    open_picker = true;
-                }
-                // Projektnavnet fylder resten; klik på det åbner også vælgeren.
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    let response = ui
-                        .add(egui::Label::new(RichText::new(&label).weak()).truncate().sense(egui::Sense::click()))
-                        .on_hover_text(format!("{label}\n{}", tr!("bar.click_to_switch")));
-                    open_picker |= response.clicked();
+        if vertical {
+            // Den vandrette bjælke drejet 90°: prik og tid øverst, projektnavnet
+            // læses oppefra og ned, og knapperne står nederst (#19).
+            ui.vertical_centered(|ui| {
+                let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
+                ui.painter().circle_filled(dot.center(), 5.0, color);
+                let strong = ui.visuals().strong_text_color();
+                rotated_text(ui, &time, egui::FontId::monospace(15.0), strong, f32::INFINITY, false);
+                ui.add_space(4.0);
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                    for (button, icon, hover, enabled, selected) in shown {
+                        let response = icon_button(ui, icon, hover, *enabled, *selected);
+                        button_rects.push(response.rect);
+                        if response.clicked() {
+                            clicked = Some(*button);
+                        }
+                    }
+                    // Projektnavnet fylder resten; klik på det åbner også vælgeren.
+                    let room = (ui.available_height() - 6.0).max(0.0);
+                    let weak = ui.visuals().weak_text_color();
+                    let response = rotated_text(ui, &label, egui::FontId::proportional(14.0), weak, room, true);
+                    open_picker |= response.on_hover_text(label_hover).clicked();
                 });
             });
-        });
+        } else {
+            ui.horizontal_centered(|ui| {
+                let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
+                ui.painter().circle_filled(dot.center(), 5.0, color);
+                ui.label(RichText::new(&time).monospace().size(15.0).strong());
 
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    for (button, icon, hover, enabled, selected) in shown {
+                        let response = icon_button(ui, icon, hover, *enabled, *selected);
+                        button_rects.push(response.rect);
+                        if response.clicked() {
+                            clicked = Some(*button);
+                        }
+                    }
+                    // Projektnavnet fylder resten; klik på det åbner også vælgeren.
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        let response = ui
+                            .add(egui::Label::new(RichText::new(&label).weak()).truncate().sense(egui::Sense::click()))
+                            .on_hover_text(label_hover);
+                        open_picker |= response.clicked();
+                    });
+                });
+            });
+        }
+
+        // Flyt først, når musen er trukket et stykke med knappen nede, og aldrig
+        // fra en knap: ellers tager vinduesmanageren musen, før et klik på en
+        // knap eller på projektnavnet er nået igennem.
+        // Efter et træk ser vi ikke altid, at knappen slippes (vinduesmanageren
+        // har musen), så et nyt tryk starter forfra.
+        if ui.input(|i| i.pointer.any_pressed()) {
+            self.bar_drag_sent = false;
+        }
+        if handle.dragged() {
+            let (origin, now) = ui.input(|i| (i.pointer.press_origin(), i.pointer.interact_pos()));
+            if let (Some(origin), Some(now)) = (origin, now)
+                && !self.bar_drag_sent
+                && origin.distance(now) > 4.0
+                && !button_rects.iter().any(|r| r.contains(origin))
+            {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                self.bar_drag_sent = true;
+            }
+        } else {
+            self.bar_drag_sent = false;
+        }
+
+        match clicked {
+            Some(BarButton::Fold) => self.data.compact = false,
+            Some(BarButton::Stop) => self.data.stop(),
+            Some(BarButton::Pause) => self.data.toggle_pause(),
+            Some(BarButton::Breathing) => self.start_breathing(),
+            Some(BarButton::Call) => self.data.toggle_call(),
+            Some(BarButton::Switch) => open_picker = true,
+            None => {}
+        }
+        if clicked.is_some() {
+            self.save();
+        }
         if open_picker {
             self.picker = match self.picker {
                 Some(_) => None,
@@ -329,11 +403,38 @@ impl TimeSnapperApp {
     }
 }
 
+/// Knapperne i bjælken.
+#[derive(Clone, Copy, PartialEq)]
+enum BarButton {
+    Fold,
+    Stop,
+    Pause,
+    Breathing,
+    Call,
+    Switch,
+}
+
 /// En lille ikonknap til bjælken. `selected` viser den som trykket ned.
-fn icon_button(ui: &mut egui::Ui, icon: &str, hover: &str, enabled: bool, selected: bool) -> bool {
+fn icon_button(ui: &mut egui::Ui, icon: &str, hover: &str, enabled: bool, selected: bool) -> egui::Response {
     let text = RichText::new(icon).size(15.0);
     let button = if selected { egui::Button::selectable(true, text) } else { egui::Button::new(text) };
-    ui.add_enabled(enabled, button.min_size(Vec2::new(28.0, 24.0))).on_hover_text(hover).clicked()
+    ui.add_enabled(enabled, button.min_size(Vec2::new(28.0, 24.0))).on_hover_text(hover)
+}
+
+/// Tekst drejet 90° med uret, så den læses oppefra og ned. Teksten afkortes
+/// med … til `max_len`; med `fill` optager den hele `max_len` i højden.
+fn rotated_text(ui: &mut egui::Ui, text: &str, font: egui::FontId, color: Color32, max_len: f32, fill: bool) -> egui::Response {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(max_len);
+    let galley = ui.painter().layout_job(job);
+    let size = galley.size();
+    let length = if fill { max_len.max(size.x) } else { size.x };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(size.y, length), egui::Sense::click());
+    // Drejet om sit øverste venstre hjørne havner teksten til venstre for
+    // punktet, så det skal være rektanglets øverste højre hjørne.
+    let shape = egui::epaint::TextShape::new(rect.right_top(), galley, color).with_angle(std::f32::consts::FRAC_PI_2);
+    ui.painter().add(shape);
+    response
 }
 
 /// Den skærm vinduet står på, i skærmpunkter.

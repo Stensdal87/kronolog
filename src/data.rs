@@ -172,6 +172,16 @@ impl ThemeChoice {
             Self::Dark => ThemePreference::Dark,
         }
     }
+
+    /// Temaet til vinduets titellinje.
+    pub fn to_window_theme(self) -> eframe::egui::SystemTheme {
+        use eframe::egui::SystemTheme;
+        match self {
+            Self::System => SystemTheme::SystemDefault,
+            Self::Light => SystemTheme::Light,
+            Self::Dark => SystemTheme::Dark,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -194,11 +204,17 @@ pub struct Data {
     /// Projekter hvis afrundede tid en given dag er rundet ned manuelt.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub round_down: Vec<RoundDown>,
+    /// Projekter hvis tid en given dag er krydset af som overført/faktureret (#16).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub billed: Vec<Billed>,
     #[serde(default)]
     pub settings: Settings,
     /// Vinduet er foldet sammen til en lille bjælke.
     #[serde(default)]
     pub compact: bool,
+    /// Bjælken står lodret, f.eks. i siden af skærmen (#19).
+    #[serde(default)]
+    pub bar_vertical: bool,
     /// Vinduets størrelse (skærmpunkter), før det blev foldet sammen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub normal_size: Option<[f32; 2]>,
@@ -276,6 +292,24 @@ impl Default for Settings {
 pub struct RoundDown {
     pub date: NaiveDate,
     pub project_id: Id,
+}
+
+/// Et projekts tid en dag, krydset af som overført (f.eks. til fakturering).
+/// `minutes` er den afrundede tid, da der blev krydset af.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+pub struct Billed {
+    pub date: NaiveDate,
+    pub project_id: Id,
+    pub minutes: i64,
+}
+
+/// Afkrydsningen af et projekts tid en dag.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum BilledState {
+    No,
+    Yes,
+    /// Krydset af, men den afrundede tid er ændret siden (her den gamle tid).
+    Changed(Duration),
 }
 
 /// Et projekts tid en dag, afrundet til kvarter.
@@ -902,6 +936,23 @@ impl Data {
     }
 
     /// Skifter mellem at runde projektets tid den dag op eller ned.
+    /// Er projektets tid den dag krydset af? `rounded` er den afrundede tid nu.
+    pub fn billed_state(&self, date: NaiveDate, project_id: Id, rounded: Duration) -> BilledState {
+        match self.billed.iter().find(|b| b.date == date && b.project_id == project_id) {
+            None => BilledState::No,
+            Some(b) if b.minutes == rounded.num_minutes() => BilledState::Yes,
+            Some(b) => BilledState::Changed(Duration::minutes(b.minutes)),
+        }
+    }
+
+    /// Kryds af med den afrundede tid nu (`Some`), eller fjern krydset (`None`).
+    pub fn set_billed(&mut self, date: NaiveDate, project_id: Id, rounded: Option<Duration>) {
+        self.billed.retain(|b| !(b.date == date && b.project_id == project_id));
+        if let Some(time) = rounded {
+            self.billed.push(Billed { date, project_id, minutes: time.num_minutes() });
+        }
+    }
+
     pub fn toggle_round_down(&mut self, date: NaiveDate, project_id: Id) {
         let item = RoundDown { date, project_id };
         match self.round_down.iter().position(|r| *r == item) {
@@ -1042,6 +1093,24 @@ mod tests {
             note: None,
             ..Default::default()
         })
+    }
+
+    #[test]
+    fn billed_warns_when_time_changes_afterwards() {
+        let mut data = Data::default();
+        let day = NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
+        let (hour, more) = (Duration::minutes(60), Duration::minutes(75));
+        assert_eq!(data.billed_state(day, 1, hour), BilledState::No);
+        data.set_billed(day, 1, Some(hour));
+        assert_eq!(data.billed_state(day, 1, hour), BilledState::Yes);
+        assert_eq!(data.billed_state(day, 2, hour), BilledState::No);
+        assert_eq!(data.billed_state(day, 1, more), BilledState::Changed(hour));
+        // Krydses af igen med den nye tid.
+        data.set_billed(day, 1, Some(more));
+        assert_eq!(data.billed_state(day, 1, more), BilledState::Yes);
+        assert_eq!(data.billed.len(), 1);
+        data.set_billed(day, 1, None);
+        assert_eq!(data.billed_state(day, 1, more), BilledState::No);
     }
 
     #[test]
