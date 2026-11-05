@@ -1,6 +1,6 @@
 //! Dialog til at rette, slette eller tilføje en registrering.
 
-use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeDelta, TimeZone, Timelike};
 use eframe::egui::{self, Color32, RichText};
 
 use crate::data::{format_duration, Data, Id, TimeEntry, NOTE_PAUSE, NOTE_PHONE};
@@ -23,9 +23,27 @@ pub struct EntryEditor {
     date: String,
     start: String,
     end: String,
+    /// Varigheden i minutter; alternativ til sluttiden (#24).
+    minutes: String,
+    /// Hvad der sidst blev rettet af sluttid og minutter. Det andet felt følger med.
+    end_source: EndSource,
     description: String,
     confirm_delete: bool,
 }
+
+/// Hvad sluttiden regnes ud fra, når starttiden ændres.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum EndSource {
+    /// Ikke rørt: slut er start + 30 min.
+    Auto,
+    /// Minutterne er tastet: slut er start + minutter.
+    Minutes,
+    /// Sluttiden er tastet (eller valgt): den står fast, minutterne følger.
+    End,
+}
+
+/// Standardlængden på en ny registrering, og afstanden i tidsmenuen.
+const STEP_MINUTES: i64 = 30;
 
 impl EntryEditor {
     pub fn edit(index: usize, entry: &TimeEntry) -> Self {
@@ -37,6 +55,8 @@ impl EntryEditor {
             date: entry.start.format("%d-%m-%Y").to_string(),
             start: entry.start.format("%H:%M").to_string(),
             end: entry.end.format("%H:%M").to_string(),
+            minutes: (entry.end - entry.start).num_minutes().to_string(),
+            end_source: EndSource::End,
             description: entry.description.clone(),
             confirm_delete: false,
         }
@@ -47,19 +67,66 @@ impl EntryEditor {
         Self { confirm_delete: true, ..Self::edit(index, entry) }
     }
 
-    /// Ny registrering på en dag. Starttiden foreslås som slutningen af dagens
-    /// seneste registrering.
+    /// Ny registrering på en dag. I dag foreslås klokken nu rundet ned til en
+    /// halv time (#24); andre dage slutningen af dagens seneste registrering.
+    /// Sluttiden sættes til en halv time efter.
     pub fn new(date: NaiveDate, suggested_start: Option<DateTime<Local>>) -> Self {
-        Self {
+        let now = Local::now();
+        let start = if date == now.date_naive() {
+            Some(floor_to_step(now.time()))
+        } else {
+            suggested_start.map(|t| t.time())
+        };
+        let mut editor = Self {
             index: None,
             original: None,
             project_id: None,
             note: None,
             date: date.format("%d-%m-%Y").to_string(),
-            start: suggested_start.map(|t| t.format("%H:%M").to_string()).unwrap_or_default(),
+            start: start.map(|t| t.format("%H:%M").to_string()).unwrap_or_default(),
             end: String::new(),
+            minutes: STEP_MINUTES.to_string(),
+            end_source: EndSource::Auto,
             description: String::new(),
             confirm_delete: false,
+        };
+        editor.start_changed();
+        editor
+    }
+
+    /// Starttiden er ændret: flyt sluttiden med (eller ret minutterne, hvis
+    /// sluttiden er sat i hånden).
+    fn start_changed(&mut self) {
+        match self.end_source {
+            EndSource::Auto | EndSource::Minutes => self.end_from_minutes(),
+            EndSource::End => self.minutes_from_end(),
+        }
+    }
+
+    fn end_changed(&mut self) {
+        self.end_source = EndSource::End;
+        self.minutes_from_end();
+    }
+
+    fn minutes_changed(&mut self) {
+        self.end_source = EndSource::Minutes;
+        self.end_from_minutes();
+    }
+
+    fn end_from_minutes(&mut self) {
+        let (Some(start), Some(minutes)) = (parse_time(&self.start), parse_minutes(&self.minutes)) else { return };
+        // Over midnat kan ikke registreres; lad sluttiden stå, så fejlen vises.
+        let (end, wrapped) = start.overflowing_add_signed(TimeDelta::minutes(minutes));
+        if wrapped == 0 {
+            self.end = end.format("%H:%M").to_string();
+        }
+    }
+
+    fn minutes_from_end(&mut self) {
+        if let (Some(start), Some(end)) = (parse_time(&self.start), parse_time(&self.end))
+            && end > start
+        {
+            self.minutes = (end - start).num_minutes().to_string();
         }
     }
 
@@ -118,9 +185,27 @@ impl EntryEditor {
 
                 ui.label(tr!("editor.time"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.start).hint_text(tr!("editor.from")).desired_width(50.0));
+                    ui.spacing_mut().item_spacing.x = 3.0;
+                    let mut start_changed = ui.add(time_field(&mut self.start, tr!("editor.from"))).changed();
+                    start_changed |= time_menu(ui, "start_menu", &mut self.start);
                     ui.label("–");
-                    ui.add(egui::TextEdit::singleline(&mut self.end).hint_text(tr!("editor.to")).desired_width(50.0));
+                    let mut end_changed = ui.add(time_field(&mut self.end, tr!("editor.to"))).changed();
+                    end_changed |= time_menu(ui, "end_menu", &mut self.end);
+                    ui.add_space(4.0);
+                    let minutes_changed = ui
+                        .add(egui::TextEdit::singleline(&mut self.minutes).desired_width(28.0).margin(egui::Margin::symmetric(3, 2)))
+                        .on_hover_text(tr!("editor.minutes_hint"))
+                        .changed();
+                    ui.label(tr!("editor.minutes"));
+                    if start_changed {
+                        self.start_changed();
+                    }
+                    if end_changed {
+                        self.end_changed();
+                    }
+                    if minutes_changed {
+                        self.minutes_changed();
+                    }
                 });
                 ui.end_row();
 
@@ -221,6 +306,63 @@ impl EntryEditor {
     }
 }
 
+fn time_field(text: &mut String, hint: String) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text).hint_text(hint).desired_width(40.0).margin(egui::Margin::symmetric(3, 2))
+}
+
+/// En lille rulleliste ved siden af et tidsfelt med hver halve time. Den
+/// åbner ved tiden i feltet. Giver `true`, når en tid er valgt.
+fn time_menu(ui: &mut egui::Ui, id: &str, text: &mut String) -> bool {
+    let current = parse_time(text).map(floor_to_step);
+    let scrolled = ui.make_persistent_id((id, "scrolled"));
+    let mut chosen = None;
+    let button = ui.add(egui::Button::new("⏷").small()).on_hover_text(tr!("editor.pick_time"));
+    let shown = egui::Popup::menu(&button).id(ui.make_persistent_id(id)).show(|ui| {
+        let first_frame = !ui.ctx().data(|d| d.get_temp::<bool>(scrolled).unwrap_or(false));
+        egui::ScrollArea::vertical().max_height(200.0).min_scrolled_height(200.0).show(ui, |ui| {
+            for slot in (0..24 * 60).step_by(STEP_MINUTES as usize) {
+                let time = NaiveTime::from_hms_opt(slot / 60, slot % 60, 0).unwrap_or_default();
+                let selected = current == Some(time);
+                let item = ui.selectable_label(selected, time.format("%H:%M").to_string());
+                if selected && first_frame {
+                    item.scroll_to_me(Some(egui::Align::Center));
+                }
+                if item.clicked() {
+                    chosen = Some(time);
+                }
+            }
+        });
+        ui.ctx().data_mut(|d| d.insert_temp(scrolled, true));
+    });
+    if shown.is_none() {
+        ui.ctx().data_mut(|d| d.remove::<bool>(scrolled));
+    }
+    match chosen {
+        Some(time) => {
+            *text = time.format("%H:%M").to_string();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Rundet ned til nærmeste halve time.
+fn floor_to_step(time: NaiveTime) -> NaiveTime {
+    let minutes = time.num_seconds_from_midnight() / 60;
+    let floored = minutes - minutes % STEP_MINUTES as u32;
+    NaiveTime::from_hms_opt(floored / 60, floored % 60, 0).unwrap_or(time)
+}
+
+/// Antal minutter: "45", eller timer og minutter som "1:30".
+fn parse_minutes(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let minutes = match text.split_once([':', '.']) {
+        Some((h, m)) => h.parse::<i64>().ok()? * 60 + m.parse::<i64>().ok()?,
+        None => text.parse().ok()?,
+    };
+    (minutes > 0).then_some(minutes)
+}
+
 fn save(index: Option<usize>, built: &Result<TimeEntry, String>) -> EditorAction {
     match built {
         Ok(entry) => EditorAction::Save(index, entry.clone()),
@@ -288,6 +430,46 @@ mod tests {
         assert_eq!(parse_date("20.10.2026"), d);
         assert_eq!(parse_date("2026-10-20"), d);
         assert_eq!(parse_date("32-10-2026"), None);
+    }
+
+    #[test]
+    fn rounds_down_to_the_half_hour() {
+        let t = |h, m| NaiveTime::from_hms_opt(h, m, 0).unwrap();
+        assert_eq!(floor_to_step(t(8, 29)), t(8, 0));
+        assert_eq!(floor_to_step(t(8, 30)), t(8, 30));
+        assert_eq!(floor_to_step(NaiveTime::from_hms_opt(23, 59, 59).unwrap()), t(23, 30));
+        assert_eq!(parse_minutes("45"), Some(45));
+        assert_eq!(parse_minutes("1:30"), Some(90));
+        assert_eq!(parse_minutes("0"), None);
+        assert_eq!(parse_minutes("x"), None);
+    }
+
+    #[test]
+    fn end_follows_start_until_set_and_minutes_follow_end() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let mut editor = EntryEditor::new(day, None);
+        editor.start = "9:00".to_owned();
+        editor.start_changed();
+        assert_eq!((editor.end.as_str(), editor.minutes.as_str()), ("09:30", "30"), "start + 30 min");
+
+        editor.minutes = "45".to_owned();
+        editor.minutes_changed();
+        assert_eq!(editor.end, "09:45");
+        editor.start = "10:00".to_owned();
+        editor.start_changed();
+        assert_eq!(editor.end, "10:45", "minutterne bevares, når starten flyttes");
+
+        editor.end = "12:00".to_owned();
+        editor.end_changed();
+        assert_eq!(editor.minutes, "120");
+        editor.start = "11:00".to_owned();
+        editor.start_changed();
+        assert_eq!((editor.end.as_str(), editor.minutes.as_str()), ("12:00", "60"), "en tastet sluttid står fast");
+
+        editor.start = "23:50".to_owned();
+        editor.minutes = "30".to_owned();
+        editor.minutes_changed();
+        assert_eq!(editor.end, "12:00", "over midnat røres sluttiden ikke");
     }
 
     #[test]

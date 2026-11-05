@@ -72,8 +72,20 @@ impl TimeSnapperApp {
     /// det står i den nederste halvdel af skærmen, og holdes inden for skærmen.
     pub(super) fn apply_layout(&mut self, ctx: &egui::Context, frame: &eframe::Frame, layout: WindowLayout) {
         let Some(inner) = ctx.input(|i| i.viewport().inner_rect) else { return };
-        if self.layout == WindowLayout::Normal && layout != WindowLayout::Normal {
+        // Husk den fulde størrelse, men kun når vinduet har nået at få den. Var
+        // det kun foldet ud et øjeblik (en dialog, der lukkede med det samme),
+        // har vinduet stadig bjælkens størrelse, og den må ikke gemmes (#25).
+        let settled = self.layout_changed_at.elapsed() > StdDuration::from_secs(1);
+        if self.layout == WindowLayout::Normal
+            && layout != WindowLayout::Normal
+            && settled
+            && inner.width() >= NORMAL_MIN_SIZE.x
+            && inner.height() >= NORMAL_MIN_SIZE.y
+        {
             self.data.normal_size = Some(inner.size().into());
+        }
+        if layout != self.layout {
+            self.layout_changed_at = Instant::now();
         }
         let (size, min_size) = match layout {
             WindowLayout::Normal => (self.data.normal_size.map_or(NORMAL_SIZE, Vec2::from), NORMAL_MIN_SIZE),
@@ -83,10 +95,9 @@ impl TimeSnapperApp {
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(min_size));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
-        // Den lodrette bjælke er for smal til en titellinje (ikon, minimér og
-        // luk blev mast sammen); den flyttes ved at trække i den.
-        let decorated = !(layout == WindowLayout::Bar && self.data.bar_vertical);
-        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(decorated));
+        // Bjælken har ingen titellinje (den lodrette er for smal til en, og den
+        // vandrette ser pænere ud uden, #23); den flyttes ved at trække i den.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(layout == WindowLayout::Normal));
 
         let mut top_left = inner.min;
         // Første gang ved opstart står vinduet allerede, hvor det blev gemt; dets
@@ -126,6 +137,18 @@ impl TimeSnapperApp {
         self.layout_applied = true;
         self.applied_vertical = self.data.bar_vertical;
         self.save();
+    }
+
+    /// Holder øje med, om den lodrette bjælke står i venstre side af skærmen,
+    /// så teksten kan vende den rigtige vej (#20). Følger med, mens den trækkes.
+    pub(super) fn update_bar_side(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        if self.layout != WindowLayout::Bar || !self.data.bar_vertical {
+            return;
+        }
+        let Some(inner) = ctx.input(|i| i.viewport().inner_rect) else { return };
+        if let Some(screen) = current_screen(ctx, frame) {
+            self.bar_on_left = inner.center().x < screen.center().x;
+        }
     }
 
     /// Flytter vinduet, så indholdet starter ved `target` (skærmpunkter).
@@ -207,7 +230,8 @@ impl TimeSnapperApp {
         ];
         let show_breathing = on_pause && self.breathing.is_none();
         let shown = buttons.iter().filter(|b| b.0 != BarButton::Breathing || show_breathing);
-        let label_hover = format!("{label}\n{}", tr!("bar.click_to_switch"));
+        // Teksten læses oppefra og ned i højre side af skærmen, nedefra og op i venstre (#20).
+        let upward = self.bar_on_left;
         // Hele bjælken er et håndtag: træk hvor som helst (undtagen på
         // knapperne) for at flytte vinduet. Titellinjen er lille, især på den
         // lodrette bjælke. Fladen lægges først, så knapperne ligger ovenpå.
@@ -222,7 +246,7 @@ impl TimeSnapperApp {
                 let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
                 ui.painter().circle_filled(dot.center(), 5.0, color);
                 let strong = ui.visuals().strong_text_color();
-                rotated_text(ui, &time, egui::FontId::monospace(15.0), strong, f32::INFINITY, false);
+                rotated_text(ui, &time, egui::FontId::monospace(15.0), strong, f32::INFINITY, false, upward);
                 ui.add_space(4.0);
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     for (button, icon, hover, enabled, selected) in shown {
@@ -232,18 +256,20 @@ impl TimeSnapperApp {
                             clicked = Some(*button);
                         }
                     }
-                    // Projektnavnet fylder resten; klik på det åbner også vælgeren.
+                    // Projektnavnet fylder resten. Et klik på det gør ingenting, så
+                    // man kan trække i vinduet dér (#22).
                     let room = (ui.available_height() - 6.0).max(0.0);
                     let weak = ui.visuals().weak_text_color();
-                    let response = rotated_text(ui, &label, egui::FontId::proportional(14.0), weak, room, true);
-                    open_picker |= response.on_hover_text(label_hover).clicked();
+                    rotated_text(ui, &label, egui::FontId::proportional(14.0), weak, room, true, upward).on_hover_text(&label);
                 });
             });
         } else {
             ui.horizontal_centered(|ui| {
                 let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
                 ui.painter().circle_filled(dot.center(), 5.0, color);
-                ui.label(RichText::new(&time).monospace().size(15.0).strong());
+                // Tekst, der kan markeres, tager trækket fra håndtaget; slå det fra,
+                // så den vandrette bjælke kan trækkes overalt som den lodrette.
+                ui.add(egui::Label::new(RichText::new(&time).monospace().size(15.0).strong()).selectable(false));
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     for (button, icon, hover, enabled, selected) in shown {
@@ -253,12 +279,10 @@ impl TimeSnapperApp {
                             clicked = Some(*button);
                         }
                     }
-                    // Projektnavnet fylder resten; klik på det åbner også vælgeren.
+                    // Projektnavnet fylder resten; man kan trække i vinduet dér (#22).
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        let response = ui
-                            .add(egui::Label::new(RichText::new(&label).weak()).truncate().sense(egui::Sense::click()))
-                            .on_hover_text(label_hover);
-                        open_picker |= response.clicked();
+                        ui.add(egui::Label::new(RichText::new(&label).weak()).truncate().selectable(false))
+                            .on_hover_text(&label);
                     });
                 });
             });
@@ -266,7 +290,7 @@ impl TimeSnapperApp {
 
         // Flyt først, når musen er trukket et stykke med knappen nede, og aldrig
         // fra en knap: ellers tager vinduesmanageren musen, før et klik på en
-        // knap eller på projektnavnet er nået igennem.
+        // knap er nået igennem.
         // Efter et træk ser vi ikke altid, at knappen slippes (vinduesmanageren
         // har musen), så et nyt tryk starter forfra.
         if ui.input(|i| i.pointer.any_pressed()) {
@@ -421,18 +445,33 @@ fn icon_button(ui: &mut egui::Ui, icon: &str, hover: &str, enabled: bool, select
     ui.add_enabled(enabled, button.min_size(Vec2::new(28.0, 24.0))).on_hover_text(hover)
 }
 
-/// Tekst drejet 90° med uret, så den læses oppefra og ned. Teksten afkortes
-/// med … til `max_len`; med `fill` optager den hele `max_len` i højden.
-fn rotated_text(ui: &mut egui::Ui, text: &str, font: egui::FontId, color: Color32, max_len: f32, fill: bool) -> egui::Response {
+/// Tekst drejet 90°, så den læses oppefra og ned, eller nedefra og op med
+/// `upward`. Teksten afkortes med … til `max_len`; med `fill` optager den hele
+/// `max_len` i højden.
+fn rotated_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    color: Color32,
+    max_len: f32,
+    fill: bool,
+    upward: bool,
+) -> egui::Response {
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_len);
     let galley = ui.painter().layout_job(job);
     let size = galley.size();
     let length = if fill { max_len.max(size.x) } else { size.x };
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(size.y, length), egui::Sense::click());
-    // Drejet om sit øverste venstre hjørne havner teksten til venstre for
-    // punktet, så det skal være rektanglets øverste højre hjørne.
-    let shape = egui::epaint::TextShape::new(rect.right_top(), galley, color).with_angle(std::f32::consts::FRAC_PI_2);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(size.y, length), egui::Sense::hover());
+    // Teksten drejes om sit øverste venstre hjørne. Med uret havner den til
+    // venstre for punktet, så det skal være rektanglets øverste højre hjørne;
+    // mod uret går den opad og til højre fra nederste venstre hjørne.
+    let (corner, angle) = if upward {
+        (rect.left_bottom(), -std::f32::consts::FRAC_PI_2)
+    } else {
+        (rect.right_top(), std::f32::consts::FRAC_PI_2)
+    };
+    let shape = egui::epaint::TextShape::new(corner, galley, color).with_angle(angle);
     ui.painter().add(shape);
     response
 }

@@ -470,9 +470,6 @@ bar.stop:
 bar.switch_project:
   da: "Skift projekt"
   en: "Switch project"
-bar.click_to_switch:
-  da: "Klik for at skifte projekt"
-  en: "Click to switch project"
 picker.title:
   da: "Skift projekt"
   en: "Switch project"
@@ -1028,3 +1025,12 @@ settings.bar_horizontal:
 settings.bar_vertical:
   da: "Lodret (til siden af skærmen)"
   en: "Vertical (for the side of the screen)"
+editor.minutes:
+  da: "min"
+  en: "min"
+editor.minutes_hint:
+  da: "Varighed i minutter (eller t:mm). Sluttiden regnes ud."
+  en: "Duration in minutes (or h:mm). The end time is calculated."
+editor.pick_time:
+  da: "Vælg et tidspunkt"
+  en: "Pick a time"

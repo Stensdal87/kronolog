@@ -129,6 +129,13 @@ pub struct TimeSnapperApp {
     applied_vertical: bool,
     /// Et træk i bjælken er givet videre til vinduesmanageren.
     bar_drag_sent: bool,
+    /// Den lodrette bjælke står i venstre side af skærmen, så teksten læses
+    /// nedefra og op (#20).
+    bar_on_left: bool,
+    /// Om vinduesikonet (proceslinjen) har den røde prik (#21).
+    window_icon_dot: bool,
+    /// Hvornår vinduet sidst skiftede visning; se `apply_layout` (#25).
+    layout_changed_at: Instant,
     /// Globale genvejstaster (kun Windows indtil videre).
     hotkeys: Option<GlobalHotkeys>,
     shortcuts_dialog: Option<ShortcutsDialog>,
@@ -214,6 +221,9 @@ impl TimeSnapperApp {
             bar_anchor_right: None,
             applied_vertical: false,
             bar_drag_sent: false,
+            bar_on_left: false,
+            window_icon_dot: false,
+            layout_changed_at: Instant::now(),
             hotkeys: None,
             shortcuts_dialog: None,
             focus_search: false,
@@ -1149,6 +1159,7 @@ impl eframe::App for TimeSnapperApp {
             self.show_window(ctx);
         }
         self.update_tray();
+        self.update_window_icon(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -1215,26 +1226,32 @@ impl eframe::App for TimeSnapperApp {
             self.apply_layout(&ctx, frame, layout);
         }
         self.handle_pending_move(&ctx);
+        self.update_bar_side(&ctx, frame);
         match layout {
             WindowLayout::Normal => self.full_ui(ui, &ctx),
             WindowLayout::Bar => {
                 egui::CentralPanel::default()
-                    .frame(if self.data.bar_vertical {
-                        // Uden titellinje: en tynd kant, så bjælken ikke flyder ud i baggrunden.
+                    // Uden titellinje: en tynd kant, så bjælken ikke flyder ud i baggrunden.
+                    .frame(
                         egui::Frame::central_panel(ui.style())
-                            .inner_margin(egui::Margin::symmetric(4, 8))
-                            .stroke(ui.visuals().window_stroke)
-                    } else {
-                        egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 4))
-                    })
+                            .inner_margin(if self.data.bar_vertical {
+                                egui::Margin::symmetric(4, 8)
+                            } else {
+                                egui::Margin::symmetric(8, 4)
+                            })
+                            .stroke(ui.visuals().window_stroke),
+                    )
                     .show(ui, |ui| self.compact_bar(ui, self.data.bar_vertical));
             }
             WindowLayout::Picker => {
+                // Også uden titellinje, så bjælken ikke hopper, når vælgeren åbnes.
+                let stroke = ui.visuals().window_stroke;
                 egui::Panel::top("compact_bar")
                     .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 4)))
                     // Vælgeren skal bruge bredden, så bjælken står vandret over den.
                     .show(ui, |ui| self.compact_bar(ui, false));
                 egui::CentralPanel::default().show(ui, |ui| self.project_picker(ui));
+                ui.painter().rect_stroke(ui.max_rect(), 0.0, stroke, egui::StrokeKind::Inside);
             }
         }
 
@@ -1748,6 +1765,24 @@ impl TimeSnapperApp {
     }
 
     /// Beskriver systembakkens menu ud fra den aktuelle tilstand.
+    /// Tiden kører på et projekt eller et opkald (ikke pause).
+    fn recording(&self) -> bool {
+        self.data.active.as_ref().is_some_and(|a| !a.is_note(NOTE_PAUSE))
+    }
+
+    /// Vinduesikonet (proceslinjen) får en fast rød prik, mens tiden kører (#21).
+    /// Det blinker ikke; det ville være for uroligt på proceslinjen.
+    fn update_window_icon(&mut self, ctx: &egui::Context) {
+        let dot = self.recording();
+        if dot == self.window_icon_dot {
+            return;
+        }
+        self.window_icon_dot = dot;
+        let icon = crate::tray::app_icon();
+        let icon = if dot { crate::tray::with_recording_dot(&icon) } else { icon };
+        ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(std::sync::Arc::new(icon))));
+    }
+
     fn update_tray(&mut self) {
         if self.tray.is_none() {
             return;
@@ -1770,6 +1805,9 @@ impl TimeSnapperApp {
         };
         let on_pause = active.is_some_and(|a| a.is_note(NOTE_PAUSE));
         let on_call = active.is_some_and(|a| a.is_call());
+        // Prikken blinker: med i lige sekunder, væk i ulige (#21).
+        // Sekunderne følger tidstagningen, ligesom opdateringen af vinduet.
+        let dot = self.recording() && active.is_some_and(|a| a.elapsed().num_seconds() % 2 == 0);
         let resume = self.data.resume_project().map(|id| self.data.project_label(id));
         let pause_label = match (on_pause, &resume) {
             (false, _) => tr!("timer.break"),
@@ -1801,6 +1839,7 @@ impl TimeSnapperApp {
             call_label,
             pause_label,
             window_visible: self.window_visible,
+            dot,
             language: rust_i18n::locale().to_string(),
             customers,
         };
