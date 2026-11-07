@@ -32,6 +32,16 @@ const HEARTBEAT: StdDuration = StdDuration::from_secs(30);
 
 const ACCENT: Color32 = Color32::from_rgb(70, 160, 230);
 
+/// Om telefonen blev taget automatisk (#27).
+#[derive(Clone, Copy, PartialEq)]
+enum AutoCall {
+    Idle,
+    /// Vi startede opkaldet og afslutter det, når mikrofonen er fri.
+    Started,
+    /// Man var allerede i et opkald; det rører vi ikke.
+    Manual,
+}
+
 #[derive(PartialEq)]
 enum Tab {
     Timer,
@@ -136,6 +146,15 @@ pub struct TimeSnapperApp {
     window_icon_dot: bool,
     /// Hvornår vinduet sidst skiftede visning; se `apply_layout` (#25).
     layout_changed_at: Instant,
+    /// Søgning efter og installation af nye versioner (#26).
+    updater: crate::updater::Updater,
+    /// Hvilke programmer der bruger mikrofonen (#27).
+    mic: crate::mic::MicWatcher,
+    /// Et opkaldsprogram har brugt mikrofonen siden da.
+    mic_busy_since: Option<Instant>,
+    /// Mikrofonen har været fri siden da.
+    mic_free_since: Option<Instant>,
+    auto_call: AutoCall,
     /// Globale genvejstaster (kun Windows indtil videre).
     hotkeys: Option<GlobalHotkeys>,
     shortcuts_dialog: Option<ShortcutsDialog>,
@@ -224,6 +243,11 @@ impl TimeSnapperApp {
             bar_on_left: false,
             window_icon_dot: false,
             layout_changed_at: Instant::now(),
+            updater: crate::updater::Updater::new(),
+            mic: crate::mic::MicWatcher::start(ctx),
+            mic_busy_since: None,
+            mic_free_since: None,
+            auto_call: AutoCall::Idle,
             hotkeys: None,
             shortcuts_dialog: None,
             focus_search: false,
@@ -1158,6 +1182,8 @@ impl eframe::App for TimeSnapperApp {
         if needs_answer && !self.window_visible {
             self.show_window(ctx);
         }
+        self.handle_microphone(ctx);
+        self.handle_updates(ctx);
         self.update_tray();
         self.update_window_icon(ctx);
     }
@@ -1318,6 +1344,8 @@ impl TimeSnapperApp {
                 });
             });
         });
+
+        self.update_banner(ui, ctx);
 
         if let Some(error) = self.error.clone() {
             egui::Panel::bottom("error").show(ui, |ui| {
@@ -1765,6 +1793,126 @@ impl TimeSnapperApp {
     }
 
     /// Beskriver systembakkens menu ud fra den aktuelle tilstand.
+    /// Tager telefonen, når et opkaldsprogram begynder at bruge mikrofonen, og
+    /// lægger på igen, når det stopper (#27). Korte blink ignoreres: mikrofonen
+    /// skal være i brug i 2 s og fri i 4 s.
+    fn handle_microphone(&mut self, ctx: &egui::Context) {
+        let settings = &self.data.settings;
+        self.mic.set_wanted(settings.auto_call || self.settings_open);
+        let busy = settings.auto_call && crate::mic::matches(self.mic.apps(), &settings.call_apps);
+        if !settings.auto_call {
+            self.auto_call = AutoCall::Idle;
+            return;
+        }
+        let now = Instant::now();
+        let in_call = self.data.active.as_ref().is_some_and(|a| a.is_call());
+        if busy {
+            self.mic_free_since = None;
+            let since = *self.mic_busy_since.get_or_insert(now);
+            if self.auto_call == AutoCall::Idle {
+                if since.elapsed() >= StdDuration::from_secs(2) {
+                    // Var man allerede i et opkald, styrer man det selv.
+                    self.auto_call = if in_call { AutoCall::Manual } else { AutoCall::Started };
+                    if !in_call {
+                        self.data.toggle_call();
+                        self.save();
+                    }
+                } else {
+                    ctx.request_repaint_after(StdDuration::from_millis(500));
+                }
+            }
+        } else {
+            self.mic_busy_since = None;
+            let since = *self.mic_free_since.get_or_insert(now);
+            if self.auto_call != AutoCall::Idle {
+                if since.elapsed() >= StdDuration::from_secs(4) {
+                    // Lagde man selv på undervejs, er der intet at afslutte.
+                    if self.auto_call == AutoCall::Started && in_call {
+                        self.data.toggle_call();
+                        self.save();
+                    }
+                    self.auto_call = AutoCall::Idle;
+                } else {
+                    ctx.request_repaint_after(StdDuration::from_millis(500));
+                }
+            }
+        }
+    }
+
+    /// Søger efter nye versioner og installerer en hentet opdatering (#26).
+    fn handle_updates(&mut self, ctx: &egui::Context) {
+        let Some(installer) = self.updater.poll(ctx, self.data.settings.check_updates) else { return };
+        // Tiden kører videre efter opdateringen (se `Data::load`).
+        self.data.updating = true;
+        if self.window_visible
+            && let Some(rect) = ctx.input(|i| i.viewport().inner_rect)
+        {
+            self.data.window_pos = Some([rect.min.x, rect.min.y]);
+        }
+        self.save();
+        match crate::updater::run_installer(&installer) {
+            Ok(()) => {
+                self.quitting = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Err(e) => {
+                self.data.updating = false;
+                self.save();
+                self.updater.status = crate::updater::Status::Failed(e);
+            }
+        }
+    }
+
+    /// Opdatér nu (installeret på Windows) eller åbn udgivelsessiden.
+    fn start_update(&mut self, ctx: &egui::Context) {
+        let Some(release) = self.updater.available().cloned() else { return };
+        if crate::updater::can_install(&release) {
+            self.updater.download(ctx);
+        } else {
+            crate::updater::open_page(&release.page);
+        }
+    }
+
+    /// Banneret øverst, når der er en ny version.
+    fn update_banner(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let Some(release) = self.updater.available().cloned() else { return };
+        if self.updater.dismissed {
+            return;
+        }
+        let downloading = matches!(self.updater.status, crate::updater::Status::Downloading(_));
+        egui::Panel::top("update").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if downloading {
+                    ui.spinner();
+                    ui.label(tr!("update.downloading", version = release.version));
+                    return;
+                }
+                ui.label(RichText::new(tr!("update.available", version = release.version)).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("×").on_hover_text(tr!("update.later")).clicked() {
+                        self.updater.dismissed = true;
+                    }
+                    let label = if crate::updater::can_install(&release) {
+                        tr!("update.install")
+                    } else {
+                        tr!("update.download")
+                    };
+                    if ui.button(label).clicked() {
+                        self.start_update(ctx);
+                    }
+                });
+            });
+        });
+    }
+
+    /// Om den blinkende prik (systembakken og bjælken) er tændt lige nu: i lige
+    /// sekunder af tidstagningen, så de blinker i samme takt (#21). Uden blink
+    /// er den altid tændt. Sekunderne følger tidstagningen, ligesom opdateringen
+    /// af vinduet.
+    pub(super) fn blink_on(&self) -> bool {
+        !self.data.settings.blink || self.data.active.as_ref().is_none_or(|a| a.elapsed().num_seconds() % 2 == 0)
+    }
+
     /// Tiden kører på et projekt eller et opkald (ikke pause).
     fn recording(&self) -> bool {
         self.data.active.as_ref().is_some_and(|a| !a.is_note(NOTE_PAUSE))
@@ -1805,9 +1953,7 @@ impl TimeSnapperApp {
         };
         let on_pause = active.is_some_and(|a| a.is_note(NOTE_PAUSE));
         let on_call = active.is_some_and(|a| a.is_call());
-        // Prikken blinker: med i lige sekunder, væk i ulige (#21).
-        // Sekunderne følger tidstagningen, ligesom opdateringen af vinduet.
-        let dot = self.recording() && active.is_some_and(|a| a.elapsed().num_seconds() % 2 == 0);
+        let dot = self.recording() && self.blink_on();
         let resume = self.data.resume_project().map(|id| self.data.project_label(id));
         let pause_label = match (on_pause, &resume) {
             (false, _) => tr!("timer.break"),
@@ -1886,6 +2032,9 @@ impl TimeSnapperApp {
         ui.radio_value(&mut vertical, true, tr!("settings.bar_vertical"));
         if vertical != self.data.bar_vertical {
             self.data.bar_vertical = vertical;
+            self.save();
+        }
+        if ui.checkbox(&mut self.data.settings.blink, tr!("settings.blink")).changed() {
             self.save();
         }
         settings_section(ui, tr!("settings.start"));
@@ -2007,6 +2156,19 @@ impl TimeSnapperApp {
             self.shortcuts_dialog = Some(ShortcutsDialog::default());
         }
 
+        // Telefonen automatisk (#27).
+        settings_section(ui, tr!("settings.calls"));
+        ui.checkbox(&mut settings.auto_call, tr!("settings.auto_call"));
+        ui.add_enabled_ui(settings.auto_call, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(tr!("settings.call_apps"));
+                ui.add(egui::TextEdit::singleline(&mut settings.call_apps).desired_width(ui.available_width() - 8.0));
+            });
+        });
+        let apps = self.mic.apps().join(", ");
+        let using = if apps.is_empty() { tr!("settings.mic_free") } else { tr!("settings.mic_used_by", apps = apps) };
+        ui.label(RichText::new(format!("{}\n{using}", tr!("settings.call_apps_hint"))).weak().small());
+
         if self.tray.is_some() {
             settings_section(ui, tr!("settings.tray"));
             ui.checkbox(&mut settings.close_to_tray, tr!("settings.close_to_tray"));
@@ -2021,6 +2183,47 @@ impl TimeSnapperApp {
             self.data.settings = settings;
             self.save();
         }
+
+        // Opdateringer (#26).
+        settings_section(ui, tr!("settings.updates"));
+        if ui.checkbox(&mut self.data.settings.check_updates, tr!("settings.check_updates")).changed() {
+            self.save();
+        }
+        // Ombrydes, så status kan stå under knappen i det smalle panel.
+        ui.horizontal_wrapped(|ui| {
+            use crate::updater::Status;
+            let checking = matches!(self.updater.status, Status::Checking | Status::Downloading(_));
+            if ui.add_enabled(!checking, egui::Button::new(tr!("settings.check_now"))).clicked() {
+                self.updater.check(ctx, true);
+            }
+            match self.updater.status.clone() {
+                Status::Idle => {}
+                Status::Checking => {
+                    ui.spinner();
+                }
+                Status::UpToDate => {
+                    ui.label(RichText::new(tr!("update.up_to_date")).weak());
+                }
+                Status::Available(release) => {
+                    let label = if crate::updater::can_install(&release) {
+                        tr!("update.install_version", version = release.version)
+                    } else {
+                        tr!("update.download_version", version = release.version)
+                    };
+                    if ui.button(label).clicked() {
+                        self.start_update(ctx);
+                    }
+                }
+                Status::Downloading(release) => {
+                    ui.spinner();
+                    ui.label(tr!("update.downloading", version = release.version));
+                }
+                Status::Failed(error) => {
+                    ui.colored_label(ui.visuals().error_fg_color, tr!("update.failed"))
+                        .on_hover_text(error);
+                }
+            }
+        });
 
         ui.add_space(20.0);
         ui.label(RichText::new(format!("Time Snapper {}", env!("CARGO_PKG_VERSION"))).weak().small());

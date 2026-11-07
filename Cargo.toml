@@ -20,6 +20,8 @@ rust_xlsxwriter = { version = "0.100.0", features = ["chrono"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sys-locale = "0.3.2"
+# Søgning efter og hentning af opdateringer på GitHub (#26). TLS vælges pr. system nedenfor.
+ureq = { version = "3.5.1", default-features = false, features = ["gzip"] }
 # Samme version som eframe bruger; bruges til at spørge om skærme og flytte vinduet.
 winit = "0.30"
 
@@ -29,12 +31,16 @@ wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 # Ikon i systembakken via D-Bus StatusNotifierItem (KDE m.fl.), uden GTK.
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+ureq = { version = "3.5.1", default-features = false, features = ["rustls"] }
 
 [target.'cfg(windows)'.dependencies]
 # Registrering af inaktivitet via GetLastInputInfo.
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
 # Ikon i systembakken.
 tray-icon = { version = "0.26", default-features = false }
+# Windows' egen TLS og proxy: virker også bag firmaets firewall, der inspicerer
+# HTTPS med sit eget rodcertifikat (det ligger i Windows' certifikatlager).
+ureq = { version = "3.5.1", default-features = false, features = ["native-tls-no-default", "win-system-proxy"] }
 
 [build-dependencies]
 winresource = "0.1.34"

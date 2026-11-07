@@ -88,13 +88,13 @@ pub fn app_icon() -> egui::IconData {
     eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png")).unwrap_or_default()
 }
 
-/// Ikonet med en rød prik i nederste højre hjørne, der viser at tiden kører (#21).
-/// En hvid kant holder prikken synlig på både lyse og mørke baggrunde.
+/// Ikonet med en rød prik midt i cirklen, der viser at tiden kører (#21).
+/// Cirklens indre er mørkt (radius ca. 0,28 af ikonet), så prikken står klart.
 pub fn with_recording_dot(icon: &egui::IconData) -> egui::IconData {
     let mut icon = icon.clone();
     let size = icon.width.min(icon.height) as f32;
-    let center = (icon.width as f32 - size * 0.24, icon.height as f32 - size * 0.24);
-    let (radius, ring) = (size * 0.2, size * 0.05);
+    let center = (icon.width as f32 / 2.0, icon.height as f32 / 2.0);
+    let (radius, ring) = (size * 0.2, 0.0);
     for (i, pixel) in icon.rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let x = (i as u32 % icon.width) as f32 + 0.5;
         let y = (i as u32 / icon.width) as f32 + 0.5;
@@ -370,16 +370,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recording_dot_is_red_in_the_corner_and_leaves_the_rest() {
+    fn recording_dot_is_red_in_the_middle_and_leaves_the_ring() {
         let icon = app_icon();
         let dotted = with_recording_dot(&icon);
         let pixel = |icon: &egui::IconData, x: u32, y: u32| {
             let i = ((y * icon.width + x) * 4) as usize;
             [icon.rgba[i], icon.rgba[i + 1], icon.rgba[i + 2], icon.rgba[i + 3]]
         };
-        let corner = (icon.width * 76 / 100, icon.height * 76 / 100);
-        assert_eq!(pixel(&dotted, corner.0, corner.1), [220, 40, 40, 255]);
+        assert_eq!(pixel(&dotted, icon.width / 2, icon.height / 2), [220, 40, 40, 255]);
         assert_eq!(pixel(&dotted, 10, 10), pixel(&icon, 10, 10));
-        assert_eq!(pixel(&dotted, icon.width / 2, icon.height / 3), pixel(&icon, icon.width / 2, icon.height / 3));
+        // Den blå ring om prikken er urørt.
+        assert_eq!(pixel(&dotted, icon.width * 82 / 100, icon.height / 2), pixel(&icon, icon.width * 82 / 100, icon.height / 2));
     }
 }

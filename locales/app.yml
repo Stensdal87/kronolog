@@ -1034,3 +1034,60 @@ editor.minutes_hint:
 editor.pick_time:
   da: "Vælg et tidspunkt"
   en: "Pick a time"
+settings.calls:
+  da: "Opkald"
+  en: "Calls"
+settings.auto_call:
+  da: "Tag telefonen automatisk, når et opkaldsprogram bruger mikrofonen"
+  en: "Start a phone call automatically when a call app uses the microphone"
+settings.call_apps:
+  da: "Programmer:"
+  en: "Apps:"
+settings.call_apps_hint:
+  da: "Adskil med komma. Det er nok med en del af navnet. Når mikrofonen er fri igen, fortsætter tiden på det forrige projekt."
+  en: "Separate with commas. Part of the name is enough. When the microphone is free again, time continues on the previous project."
+settings.mic_free:
+  da: "Ingen programmer bruger mikrofonen lige nu."
+  en: "No apps are using the microphone right now."
+settings.mic_used_by:
+  da: "Bruger mikrofonen nu: %{apps}"
+  en: "Using the microphone now: %{apps}"
+settings.updates:
+  da: "Opdateringer"
+  en: "Updates"
+settings.check_updates:
+  da: "Søg automatisk efter nye versioner"
+  en: "Check for new versions automatically"
+settings.check_now:
+  da: "Søg nu"
+  en: "Check now"
+update.available:
+  da: "Version %{version} er klar"
+  en: "Version %{version} is available"
+update.install:
+  da: "Opdatér nu"
+  en: "Update now"
+update.download:
+  da: "Hent"
+  en: "Download"
+update.install_version:
+  da: "Opdatér til %{version}"
+  en: "Update to %{version}"
+update.download_version:
+  da: "Hent %{version}"
+  en: "Download %{version}"
+update.downloading:
+  da: "Henter version %{version}…"
+  en: "Downloading version %{version}…"
+update.up_to_date:
+  da: "Du har den nyeste version."
+  en: "You have the latest version."
+update.failed:
+  da: "Kunne ikke søge efter opdateringer."
+  en: "Could not check for updates."
+update.later:
+  da: "Senere"
+  en: "Later"
+settings.blink:
+  da: "Lad prikken blinke, mens tiden kører (bjælken og systembakken)"
+  en: "Blink the dot while time is running (bar and system tray)"

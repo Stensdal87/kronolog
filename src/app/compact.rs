@@ -207,6 +207,8 @@ impl TimeSnapperApp {
                 (color, format_duration(a.elapsed()), label)
             }
         };
+        // Prikken blinker i takt med systembakken, mens tiden kører (ikke under pause).
+        let dot_color = if running && !on_pause && !self.blink_on() { color.gamma_multiply(0.2) } else { color };
         let resume = self.data.resume_project().map(|id| self.data.project_label(id));
         let pause_hover = match &resume {
             Some(label) if on_pause => tr!("bar.resume_on", project = label),
@@ -244,7 +246,7 @@ impl TimeSnapperApp {
             // læses oppefra og ned, og knapperne står nederst (#19).
             ui.vertical_centered(|ui| {
                 let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
-                ui.painter().circle_filled(dot.center(), 5.0, color);
+                ui.painter().circle_filled(dot.center(), 5.0, dot_color);
                 let strong = ui.visuals().strong_text_color();
                 rotated_text(ui, &time, egui::FontId::monospace(15.0), strong, f32::INFINITY, false, upward);
                 ui.add_space(4.0);
@@ -266,7 +268,7 @@ impl TimeSnapperApp {
         } else {
             ui.horizontal_centered(|ui| {
                 let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
-                ui.painter().circle_filled(dot.center(), 5.0, color);
+                ui.painter().circle_filled(dot.center(), 5.0, dot_color);
                 // Tekst, der kan markeres, tager trækket fra håndtaget; slå det fra,
                 // så den vandrette bjælke kan trækkes overalt som den lodrette.
                 ui.add(egui::Label::new(RichText::new(&time).monospace().size(15.0).strong()).selectable(false));

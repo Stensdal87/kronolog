@@ -22,9 +22,11 @@ mod export_dialog;
 mod hotkeys;
 mod i18n;
 mod idle;
+mod mic;
 mod shortcuts;
 mod single_instance;
 mod tray;
+mod updater;
 
 use eframe::egui;
 

@@ -72,6 +72,9 @@ Type: files; Name: "{userstartup}\Time Snapper.lnk"
 
 [Run]
 Filename: "{app}\TimeSnapper.exe"; Description: "{cm:LaunchProgram,Time Snapper}"; Flags: nowait postinstall skipifsilent
+; Opdatering inde fra programmet (#26): installeren køres stille med /AUTOUPDATE=1,
+; og programmet, der lukkede for at blive opdateret, startes igen.
+Filename: "{app}\TimeSnapper.exe"; Flags: nowait; Check: IsAutoUpdate
 
 [Code]
 // Er Time Snapper installeret i forvejen? (Afinstallationsnøglen fra AppId.)
@@ -81,6 +84,12 @@ var
 begin
   Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{421CB1D1-D7AC-49F7-8A0A-E05F04F75468}_is1';
   Result := RegKeyExists(HKEY_CURRENT_USER, Key) or RegKeyExists(HKEY_LOCAL_MACHINE, Key);
+end;
+
+// Startet af programmet selv for at opdatere (se src/updater.rs).
+function IsAutoUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
 end;
 
 // Fjern automatisk start ved afinstallation, også hvis den er slået til inde i programmet.

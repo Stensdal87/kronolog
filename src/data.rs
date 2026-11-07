@@ -215,6 +215,10 @@ pub struct Data {
     /// Bjælken står lodret, f.eks. i siden af skærmen (#19).
     #[serde(default)]
     pub bar_vertical: bool,
+    /// Programmet lukkede for at blive opdateret (#26): en kørende timer skal
+    /// køre videre ved næste start i stedet for at blive afsluttet.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub updating: bool,
     /// Vinduets størrelse (skærmpunkter), før det blev foldet sammen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub normal_size: Option<[f32; 2]>,
@@ -248,6 +252,14 @@ pub struct Settings {
     /// Rækkefølge af kunder og projekter i listerne (issue #2).
     pub sort: SortOrder,
     pub language: crate::i18n::Language,
+    /// Søg selv efter nye versioner (#26).
+    pub check_updates: bool,
+    /// Prikken i bjælken og i systembakken blinker, mens tiden kører.
+    pub blink: bool,
+    /// Tag telefonen, når et af `call_apps` bruger mikrofonen (#27).
+    pub auto_call: bool,
+    /// Programmerne, der tæller som opkald, adskilt med komma.
+    pub call_apps: String,
 }
 
 /// Et projekt i kundeskabelonen.
@@ -283,6 +295,10 @@ impl Default for Settings {
             customer_template: Vec::new(),
             sort: SortOrder::Name,
             language: Default::default(),
+            check_updates: true,
+            blink: true,
+            auto_call: false,
+            call_apps: "Teams, Zoom".to_owned(),
         }
     }
 }
@@ -344,7 +360,12 @@ impl Data {
         };
         // En timer der stadig "kører" i filen betyder at programmet ikke blev
         // lukket pænt. Afslut den ved sidste livstegn i stedet for at tælle videre.
-        if let Some(last_seen) = data.active.as_ref().map(|a| a.last_seen) {
+        // Undtagen lige efter en opdatering: da lukkede programmet med vilje, og
+        // tiden fortsætter (er det over 15 minutter siden, er noget gået galt).
+        let updated = std::mem::take(&mut data.updating);
+        if let Some(last_seen) = data.active.as_ref().map(|a| a.last_seen)
+            && !(updated && Local::now() - last_seen < Duration::minutes(15))
+        {
             data.stop_at(last_seen);
         }
         data.internal_project_id();
@@ -1653,6 +1674,30 @@ mod tests {
         assert!(loaded.active.is_none());
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].duration(), Duration::minutes(30));
+    }
+
+    #[test]
+    fn timer_keeps_running_after_an_update() {
+        let dir = std::env::temp_dir().join(format!("ts-test-update-{}", std::process::id()));
+        let path = dir.join("data.json");
+        let start = Local::now() - Duration::hours(1);
+
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        let p = data.add_project(c, "A");
+        data.active = Some(ActiveTimer { project_id: Some(p), start, last_seen: Local::now(), ..Default::default() });
+        data.updating = true;
+        data.save(&path).unwrap();
+        let loaded = Data::load(&path).unwrap();
+        assert_eq!(loaded.active.as_ref().map(|a| a.start), Some(start), "kører videre");
+        assert!(!loaded.updating);
+
+        // For længe siden: så afsluttes den som efter et nedbrud.
+        data.active = Some(ActiveTimer { project_id: Some(p), start, last_seen: start, ..Default::default() });
+        data.save(&path).unwrap();
+        let loaded = Data::load(&path).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(loaded.active.is_none());
     }
 
     #[test]
