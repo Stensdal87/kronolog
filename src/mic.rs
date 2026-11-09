@@ -58,6 +58,12 @@ impl MicWatcher {
                     }
                     ctx.request_repaint();
                     last = seen;
+                } else if !seen.in_use.is_empty() {
+                    // Væk programmet, så længe mikrofonen er i brug: det skal nå
+                    // forbi de 2 sekunder, før telefonen tages, og et
+                    // `request_repaint_after` kommer ikke altid frem, når vinduet
+                    // er minimeret eller skjult (#33).
+                    ctx.request_repaint();
                 }
                 std::thread::sleep(POLL_EVERY);
             }
@@ -108,6 +114,35 @@ fn windows_app_name(key: &str) -> String {
         key.rsplit('#').next().unwrap_or(key).to_owned()
     } else {
         key.split('_').next().unwrap_or(key).to_owned()
+    }
+}
+
+/// Log over mikrofonen og automatisk telefon (#33), så man kan se, hvad
+/// programmet så og besluttede, når et opkald ikke blev registreret. Filen
+/// `mic-log.txt` ligger ved siden af datafilen og holdes under ca. 256 KB (den
+/// forrige gemmes som `mic-log.old.txt`).
+pub struct MicLog {
+    path: std::path::PathBuf,
+}
+
+impl MicLog {
+    const MAX_BYTES: u64 = 256 * 1024;
+
+    pub fn new(data_path: &std::path::Path) -> Self {
+        Self { path: data_path.with_file_name("mic-log.txt") }
+    }
+
+    pub fn folder(&self) -> Option<&std::path::Path> {
+        self.path.parent()
+    }
+
+    pub fn write(&self, line: &str) {
+        use std::io::Write;
+        if std::fs::metadata(&self.path).is_ok_and(|m| m.len() > Self::MAX_BYTES) {
+            let _ = std::fs::rename(&self.path, self.path.with_file_name("mic-log.old.txt"));
+        }
+        let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&self.path) else { return };
+        let _ = writeln!(file, "{}  {line}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
     }
 }
 

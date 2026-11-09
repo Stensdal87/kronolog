@@ -162,6 +162,13 @@ pub struct TimeSnapperApp {
     /// Mikrofonen har været fri siden da.
     mic_free_since: Option<Instant>,
     auto_call: AutoCall,
+    /// Log over mikrofonen og automatisk telefon (#33).
+    mic_log: crate::mic::MicLog,
+    /// Hvad loggen sidst skrev om mikrofonen og indstillingen.
+    logged_mic_apps: Option<Vec<String>>,
+    logged_auto_call: Option<bool>,
+    /// Sidst `handle_microphone` kørte; et langt hul skrives i loggen.
+    last_mic_check: Instant,
     /// Globale genvejstaster (kun Windows indtil videre).
     hotkeys: Option<GlobalHotkeys>,
     shortcuts_dialog: Option<ShortcutsDialog>,
@@ -201,6 +208,7 @@ impl TimeSnapperApp {
             // Gem aldrig oven i en fil vi ikke kunne læse.
             Err(e) => (Data::default(), Some(e)),
         };
+        let mic_log = crate::mic::MicLog::new(&path);
         let mut app = Self {
             data,
             instance: None,
@@ -257,6 +265,10 @@ impl TimeSnapperApp {
             mic_busy_since: None,
             mic_free_since: None,
             auto_call: AutoCall::Idle,
+            mic_log,
+            logged_mic_apps: None,
+            logged_auto_call: None,
+            last_mic_check: Instant::now(),
             hotkeys: None,
             shortcuts_dialog: None,
             focus_search: false,
@@ -1818,13 +1830,48 @@ impl TimeSnapperApp {
     fn handle_microphone(&mut self, ctx: &egui::Context) {
         let settings = &self.data.settings;
         self.mic.set_wanted(settings.auto_call || self.settings_open);
-        let busy = settings.auto_call && crate::mic::matches(self.mic.apps(), &settings.call_apps);
+        let now = Instant::now();
+        let gap = now - std::mem::replace(&mut self.last_mic_check, now);
+        if self.logged_auto_call != Some(settings.auto_call) {
+            self.logged_auto_call = Some(settings.auto_call);
+            self.mic_log.write(&format!(
+                "Time Snapper {}: automatisk telefon {}, programmer: \"{}\"",
+                env!("CARGO_PKG_VERSION"),
+                if settings.auto_call { "TIL" } else { "FRA" },
+                settings.call_apps
+            ));
+        }
         if !settings.auto_call {
             self.auto_call = AutoCall::Idle;
+            self.logged_mic_apps = None;
             return;
         }
-        let now = Instant::now();
+        // Har programmet stået stille (minimeret/skjult), kan et opkald være gået forbi.
+        if gap > StdDuration::from_secs(3) {
+            let minimized = ctx.input(|i| i.viewport().minimized).unwrap_or(false);
+            self.mic_log.write(&format!(
+                "Programmet har ikke tjekket mikrofonen i {:.1} s (vindue {})",
+                gap.as_secs_f32(),
+                if !self.window_visible { "skjult" } else if minimized { "minimeret" } else { "synligt" }
+            ));
+        }
+        let apps = self.mic.apps().to_vec();
+        let busy = crate::mic::matches(&apps, &settings.call_apps);
+        if self.logged_mic_apps.as_ref() != Some(&apps) {
+            let line = match (apps.is_empty(), busy) {
+                (true, _) => "Mikrofonen er fri".to_owned(),
+                (false, true) => format!("Mikrofonen bruges af: {} (et opkaldsprogram)", apps.join(", ")),
+                (false, false) => format!(
+                    "Mikrofonen bruges af: {} (matcher ikke \"{}\", ignoreres)",
+                    apps.join(", "),
+                    settings.call_apps
+                ),
+            };
+            self.mic_log.write(&line);
+            self.logged_mic_apps = Some(apps);
+        }
         let in_call = self.data.active.as_ref().is_some_and(|a| a.is_call());
+        let current = self.active_description();
         if busy {
             self.mic_free_since = None;
             let since = *self.mic_busy_since.get_or_insert(now);
@@ -1832,9 +1879,15 @@ impl TimeSnapperApp {
                 if since.elapsed() >= StdDuration::from_secs(2) {
                     // Var man allerede i et opkald, styrer man det selv.
                     self.auto_call = if in_call { AutoCall::Manual } else { AutoCall::Started };
-                    if !in_call {
+                    if in_call {
+                        self.mic_log.write("Opkald i gang i forvejen: telefonen røres ikke");
+                    } else {
                         self.data.toggle_call();
                         self.save();
+                        self.mic_log.write(&format!(
+                            "Telefon startet efter {:.1} s (før: {current})",
+                            since.elapsed().as_secs_f32()
+                        ));
                     }
                 } else {
                     ctx.request_repaint_after(StdDuration::from_millis(500));
@@ -1849,12 +1902,26 @@ impl TimeSnapperApp {
                     if self.auto_call == AutoCall::Started && in_call {
                         self.data.toggle_call();
                         self.save();
+                        let after = self.active_description();
+                        self.mic_log.write(&format!("Telefon afsluttet; fortsætter: {after}"));
+                    } else if self.auto_call == AutoCall::Started {
+                        self.mic_log.write("Mikrofonen fri; opkaldet var allerede afsluttet i hånden");
                     }
                     self.auto_call = AutoCall::Idle;
                 } else {
                     ctx.request_repaint_after(StdDuration::from_millis(500));
                 }
             }
+        }
+    }
+
+    /// Hvad tiden kører på, til loggen.
+    fn active_description(&self) -> String {
+        match &self.data.active {
+            None => "ingen tid kører".to_owned(),
+            Some(a) if a.is_call() => "telefon".to_owned(),
+            Some(a) if a.is_note(NOTE_PAUSE) => "pause".to_owned(),
+            Some(a) => a.project_id.map_or_else(|| "?".to_owned(), |id| self.data.project_label(id)),
         }
     }
 
@@ -2226,6 +2293,12 @@ impl TimeSnapperApp {
         let apps = self.mic.apps().join(", ");
         let using = if apps.is_empty() { tr!("settings.mic_free") } else { tr!("settings.mic_used_by", apps = apps) };
         ui.label(RichText::new(format!("{}\n{using}", tr!("settings.call_apps_hint"))).weak().small());
+        // Loggen til fejlsøgning (#33).
+        if ui.small_button(tr!("settings.open_mic_log")).on_hover_text(tr!("settings.open_mic_log_hint")).clicked()
+            && let Some(folder) = self.mic_log.folder()
+        {
+            crate::updater::open_page(&folder.to_string_lossy());
+        }
 
         if self.tray.is_some() {
             settings_section(ui, tr!("settings.tray"));

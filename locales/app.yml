@@ -1121,3 +1121,9 @@ settings.pick_mic_app:
 settings.no_mic_apps:
   da: "Ingen programmer set endnu. Start et opkald, mens indstillingerne er åbne."
   en: "No apps seen yet. Start a call while settings are open."
+settings.open_mic_log:
+  da: "Åbn mappen med opkaldsloggen"
+  en: "Open the folder with the call log"
+settings.open_mic_log_hint:
+  da: "mic-log.txt viser, hvornår mikrofonen blev brugt, og hvad Time Snapper gjorde. Send den, hvis et opkald ikke blev registreret."
+  en: "mic-log.txt shows when the microphone was used and what Time Snapper did. Send it if a call was not registered."
