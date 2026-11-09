@@ -16,9 +16,20 @@ use eframe::egui;
 
 const POLL_EVERY: Duration = Duration::from_secs(2);
 
+/// Hvad tråden har set.
+#[derive(Clone, Default, PartialEq)]
+struct Seen {
+    /// Bruger mikrofonen nu.
+    in_use: Vec<String>,
+    /// Har brugt mikrofonen: på Windows alt, hvad Windows husker, på Linux hvad
+    /// der er set, mens programmet har kørt. Til at vælge navnet i
+    /// indstillingerne (#28).
+    known: Vec<String>,
+}
+
 pub struct MicWatcher {
-    rx: Receiver<Vec<String>>,
-    apps: Vec<String>,
+    rx: Receiver<Seen>,
+    seen: Seen,
     /// Tråden spørger kun, når nogen har brug for svaret.
     wanted: Arc<AtomicBool>,
 }
@@ -30,32 +41,50 @@ impl MicWatcher {
         let thread_wanted = wanted.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let mut last = Vec::new();
+            let mut last = Seen::default();
             loop {
-                let apps = if thread_wanted.load(Ordering::Relaxed) { apps_using_microphone() } else { Vec::new() };
-                if apps != last {
-                    if tx.send(apps.clone()).is_err() {
+                let mut seen = Seen { in_use: Vec::new(), known: last.known.clone() };
+                if thread_wanted.load(Ordering::Relaxed) {
+                    let (in_use, known) = microphone_apps();
+                    seen.in_use = in_use;
+                    seen.known.extend(known);
+                    seen.known.extend(seen.in_use.iter().cloned());
+                    seen.known.sort_by_key(|a| a.to_lowercase());
+                    seen.known.dedup();
+                }
+                if seen != last {
+                    if tx.send(seen.clone()).is_err() {
                         return;
                     }
                     ctx.request_repaint();
-                    last = apps;
+                    last = seen;
                 }
                 std::thread::sleep(POLL_EVERY);
             }
         });
-        Self { rx, apps: Vec::new(), wanted }
+        Self { rx, seen: Seen::default(), wanted }
     }
 
     pub fn set_wanted(&self, wanted: bool) {
         self.wanted.store(wanted, Ordering::Relaxed);
     }
 
+    fn refresh(&mut self) {
+        if let Some(seen) = self.rx.try_iter().last() {
+            self.seen = seen;
+        }
+    }
+
     /// Programmerne, der bruger mikrofonen, som de sidst blev set.
     pub fn apps(&mut self) -> &[String] {
-        if let Some(apps) = self.rx.try_iter().last() {
-            self.apps = apps;
-        }
-        &self.apps
+        self.refresh();
+        &self.seen.in_use
+    }
+
+    /// Programmer, der har brugt mikrofonen (til at vælge navnet).
+    pub fn known_apps(&mut self) -> &[String] {
+        self.refresh();
+        &self.seen.known
     }
 }
 
@@ -82,8 +111,18 @@ fn windows_app_name(key: &str) -> String {
     }
 }
 
+/// Tilføjer `app` til listen i indstillingsfeltet, hvis den ikke er der.
+pub fn add_to_list(list: &str, app: &str) -> String {
+    let mut names: Vec<&str> = list.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+    if !names.iter().any(|n| n.eq_ignore_ascii_case(app)) {
+        names.push(app);
+    }
+    names.join(", ")
+}
+
+/// Programmerne, der bruger mikrofonen nu, og dem der har brugt den.
 #[cfg(windows)]
-fn apps_using_microphone() -> Vec<String> {
+fn microphone_apps() -> (Vec<String>, Vec<String>) {
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
     use windows_sys::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_QWORD, RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
@@ -150,13 +189,13 @@ fn apps_using_microphone() -> Vec<String> {
         (result == ERROR_SUCCESS).then_some(key)
     }
 
-    /// Programmerne under `key`, der bruger mikrofonen nu.
-    fn in_use(key: HKEY, apps: &mut Vec<String>) {
+    /// Programmerne under `key`: dem der bruger mikrofonen nu, og alle der har.
+    fn collect(key: HKEY, in_use: &mut Vec<String>, known: &mut Vec<String>) {
         for name in subkeys(key) {
             let text = String::from_utf16_lossy(&name[..name.len() - 1]);
             if text == "NonPackaged" {
                 if let Some(sub) = open(key, &name) {
-                    in_use(sub, apps);
+                    collect(sub, in_use, known);
                     // SAFETY: åbnet ovenfor.
                     unsafe { RegCloseKey(sub) };
                 }
@@ -164,29 +203,32 @@ fn apps_using_microphone() -> Vec<String> {
             }
             let started = qword(key, &name, "LastUsedTimeStart").unwrap_or(0);
             let stopped = qword(key, &name, "LastUsedTimeStop");
-            if started != 0 && stopped == Some(0) {
-                apps.push(windows_app_name(&text));
+            if started != 0 {
+                known.push(windows_app_name(&text));
+                if stopped == Some(0) {
+                    in_use.push(windows_app_name(&text));
+                }
             }
         }
     }
 
-    let mut apps = Vec::new();
+    let (mut in_use, mut known) = (Vec::new(), Vec::new());
     if let Some(root) = open(HKEY_CURRENT_USER, &wide(ROOT)) {
-        in_use(root, &mut apps);
+        collect(root, &mut in_use, &mut known);
         // SAFETY: åbnet ovenfor.
         unsafe { RegCloseKey(root) };
     }
-    apps.sort();
-    apps.dedup();
-    apps
+    in_use.sort();
+    in_use.dedup();
+    (in_use, known)
 }
 
 #[cfg(target_os = "linux")]
-fn apps_using_microphone() -> Vec<String> {
+fn microphone_apps() -> (Vec<String>, Vec<String>) {
     let Ok(output) = std::process::Command::new("pactl").args(["-f", "json", "list", "source-outputs"]).output() else {
-        return Vec::new();
+        return Default::default();
     };
-    pactl_apps(&String::from_utf8_lossy(&output.stdout))
+    (pactl_apps(&String::from_utf8_lossy(&output.stdout)), Vec::new())
 }
 
 /// Programmerne i `pactl -f json list source-outputs`. Lydmålere (f.eks. KDE's
@@ -214,8 +256,8 @@ fn pactl_apps(json: &str) -> Vec<String> {
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-fn apps_using_microphone() -> Vec<String> {
-    Vec::new()
+fn microphone_apps() -> (Vec<String>, Vec<String>) {
+    Default::default()
 }
 
 #[cfg(test)]
@@ -230,6 +272,13 @@ mod tests {
         assert!(!matches(&apps, "Zoom"));
         assert!(!matches(&apps, ""));
         assert!(!matches(&[], "Teams"));
+    }
+
+    #[test]
+    fn picked_app_is_added_once() {
+        assert_eq!(add_to_list("Teams, Zoom", "ms-teams.exe"), "Teams, Zoom, ms-teams.exe");
+        assert_eq!(add_to_list("Teams, Zoom", "zoom"), "Teams, Zoom");
+        assert_eq!(add_to_list(" ", "Teams"), "Teams");
     }
 
     #[test]

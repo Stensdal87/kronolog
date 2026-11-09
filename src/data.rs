@@ -215,6 +215,9 @@ pub struct Data {
     /// Bjælken står lodret, f.eks. i siden af skærmen (#19).
     #[serde(default)]
     pub bar_vertical: bool,
+    /// Gennemførte åndedrætsøvelser pr. dag, til pointene (#29).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub breathing_done: std::collections::BTreeMap<NaiveDate, u32>,
     /// Programmet lukkede for at blive opdateret (#26): en kørende timer skal
     /// køre videre ved næste start i stedet for at blive afsluttet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -246,6 +249,8 @@ pub struct Settings {
     pub breathing_minutes: u32,
     /// Start øvelsen af sig selv, når en pause begynder.
     pub breathing_auto: bool,
+    /// Egne åndedrætsøvelser (#30).
+    pub custom_exercises: Vec<crate::app::breathing::CustomExercise>,
     pub shortcuts: crate::shortcuts::Shortcuts,
     /// Projekter alle nye kunder får (issue #9).
     pub customer_template: Vec<TemplateProject>,
@@ -291,6 +296,7 @@ impl Default for Settings {
             breathing_exercise: Default::default(),
             breathing_minutes: 2,
             breathing_auto: false,
+            custom_exercises: Vec::new(),
             shortcuts: Default::default(),
             customer_template: Vec::new(),
             sort: SortOrder::Name,

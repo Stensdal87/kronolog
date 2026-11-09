@@ -1091,3 +1091,33 @@ update.later:
 settings.blink:
   da: "Lad prikken blinke, mens tiden kører (bjælken og systembakken)"
   en: "Blink the dot while time is running (bar and system tray)"
+breathing.stats:
+  da: "🔥 %{streak} dage i træk · %{week} denne uge · %{total} i alt"
+  en: "🔥 %{streak} days in a row · %{week} this week · %{total} in total"
+breathing.new_title:
+  da: "Ny øvelse"
+  en: "New exercise"
+breathing.new_in:
+  da: "Ind"
+  en: "In"
+breathing.new_hold:
+  da: "Hold"
+  en: "Hold"
+breathing.new_out:
+  da: "Ud"
+  en: "Out"
+breathing.new_name:
+  da: "Navn, f.eks. Rolig aften"
+  en: "Name, e.g. Calm evening"
+breathing.new_hint:
+  da: "Lav din egen øvelse"
+  en: "Create your own exercise"
+breathing.delete:
+  da: "Slet øvelsen"
+  en: "Delete the exercise"
+settings.pick_mic_app:
+  da: "Vælg et program, der har brugt mikrofonen"
+  en: "Pick an app that has used the microphone"
+settings.no_mic_apps:
+  da: "Ingen programmer set endnu. Start et opkald, mens indstillingerne er åbne."
+  en: "No apps seen yet. Start a call while settings are open."

@@ -10,12 +10,14 @@
 
 use std::f32::consts::PI;
 
+use chrono::Datelike;
+
 use serde::{Deserialize, Serialize};
 
 use super::*;
 
 /// De øvelser man kan vælge imellem i indstillingerne.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Default, Debug)]
 pub enum Exercise {
     /// Ind 4 s, hold 4 s, ud 4 s, hold 4 s.
     #[default]
@@ -26,35 +28,63 @@ pub enum Exercise {
     FiveSevenEight,
     /// Ind 4 s, ud 6 s.
     Calm,
+    /// En øvelse brugeren selv har lavet (#30).
+    Custom(CustomExercise),
+}
+
+/// En selvlavet øvelse: et navn og sekunder for ind, hold, ud, hold.
+/// Hold på 0 springes over; ind og ud er mindst 1.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct CustomExercise {
+    pub name: String,
+    pub seconds: [u32; 4],
+}
+
+impl CustomExercise {
+    /// "4-0-7-8".
+    pub fn pattern(&self) -> String {
+        self.seconds.map(|s| s.to_string()).join("-")
+    }
 }
 
 impl Exercise {
-    pub const ALL: [Exercise; 4] = [Exercise::Box, Exercise::FourSevenEight, Exercise::FiveSevenEight, Exercise::Calm];
+    /// De indbyggede øvelser efterfulgt af brugerens egne.
+    pub fn all(custom: &[CustomExercise]) -> Vec<Exercise> {
+        let built_in = [Exercise::Box, Exercise::FourSevenEight, Exercise::FiveSevenEight, Exercise::Calm];
+        built_in.into_iter().chain(custom.iter().cloned().map(Exercise::Custom)).collect()
+    }
 
-    pub fn label(self) -> String {
+    pub fn label(&self) -> String {
         match self {
             Exercise::Box => tr!("breathing.ex_box"),
             Exercise::FourSevenEight => tr!("breathing.ex_478"),
             Exercise::FiveSevenEight => tr!("breathing.ex_578"),
             Exercise::Calm => tr!("breathing.ex_calm"),
+            Exercise::Custom(c) => format!("{} ({})", c.name, c.pattern()),
         }
     }
 
-    fn phases(self) -> &'static [(Phase, f32)] {
+    fn phases(&self) -> Vec<(Phase, f32)> {
         match self {
-            Exercise::Box => &[(Phase::In, 4.0), (Phase::HoldFull, 4.0), (Phase::Out, 4.0), (Phase::HoldEmpty, 4.0)],
-            Exercise::FourSevenEight => &[(Phase::In, 4.0), (Phase::HoldFull, 7.0), (Phase::Out, 8.0)],
-            Exercise::FiveSevenEight => &[(Phase::In, 5.0), (Phase::HoldFull, 7.0), (Phase::Out, 8.0)],
-            Exercise::Calm => &[(Phase::In, 4.0), (Phase::Out, 6.0)],
+            Exercise::Box => vec![(Phase::In, 4.0), (Phase::HoldFull, 4.0), (Phase::Out, 4.0), (Phase::HoldEmpty, 4.0)],
+            Exercise::FourSevenEight => vec![(Phase::In, 4.0), (Phase::HoldFull, 7.0), (Phase::Out, 8.0)],
+            Exercise::FiveSevenEight => vec![(Phase::In, 5.0), (Phase::HoldFull, 7.0), (Phase::Out, 8.0)],
+            Exercise::Calm => vec![(Phase::In, 4.0), (Phase::Out, 6.0)],
+            Exercise::Custom(c) => [Phase::In, Phase::HoldFull, Phase::Out, Phase::HoldEmpty]
+                .into_iter()
+                .zip(c.seconds)
+                .filter(|&(phase, secs)| secs > 0 || matches!(phase, Phase::In | Phase::Out))
+                .map(|(phase, secs)| (phase, secs.max(1) as f32))
+                .collect(),
         }
     }
 
-    fn round_seconds(self) -> f32 {
+    fn round_seconds(&self) -> f32 {
         self.phases().iter().map(|(_, s)| s).sum()
     }
 
     /// Antal hele runder, der fylder omtrent `minutes` minutter (mindst én).
-    pub fn rounds_for(self, minutes: u32) -> u32 {
+    pub fn rounds_for(&self, minutes: u32) -> u32 {
         ((minutes as f32 * 60.0 / self.round_seconds()).round() as u32).max(1)
     }
 }
@@ -114,7 +144,7 @@ enum Step {
 }
 
 /// Hvor i øvelsen man er, `elapsed` sekunder efter start.
-fn step_at(exercise: Exercise, rounds: u32, elapsed: f32) -> Step {
+fn step_at(exercise: &Exercise, rounds: u32, elapsed: f32) -> Step {
     if elapsed < PREPARE {
         return Step::Prepare { left: PREPARE - elapsed };
     }
@@ -125,7 +155,7 @@ fn step_at(exercise: Exercise, rounds: u32, elapsed: f32) -> Step {
         return Step::Done;
     }
     let mut in_round = t - round as f32 * round_len;
-    for (index, &(phase, secs)) in exercise.phases().iter().enumerate() {
+    for (index, (phase, secs)) in exercise.phases().into_iter().enumerate() {
         if in_round < secs {
             return Step::Phase { round: round + 1, index, phase, progress: in_round / secs, left: secs - in_round };
         }
@@ -138,29 +168,138 @@ pub(super) struct Breathing {
     exercise: Exercise,
     rounds: u32,
     started: Instant,
+    /// Øvelsen er talt med i pointene (#29).
+    counted: bool,
 }
 
 impl Breathing {
     pub(super) fn new(exercise: Exercise, minutes: u32) -> Self {
-        Self { exercise, rounds: exercise.rounds_for(minutes), started: Instant::now() }
+        Self { rounds: exercise.rounds_for(minutes), exercise, started: Instant::now(), counted: false }
+    }
+}
+
+/// Pointene for åndedrætsøvelser (#29): gennemførte øvelser pr. dag.
+pub struct BreathingStats {
+    /// Dage i træk med mindst én øvelse, til og med i dag (eller i går, hvis
+    /// dagens endnu mangler).
+    pub streak: u32,
+    pub this_week: u32,
+    pub total: u32,
+}
+
+impl BreathingStats {
+    pub fn from(done: &std::collections::BTreeMap<NaiveDate, u32>, today: NaiveDate) -> Self {
+        let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+        let this_week = done.range(monday..=today).map(|(_, n)| n).sum();
+        let total = done.values().sum();
+        let mut day = if done.contains_key(&today) { today } else { today - Duration::days(1) };
+        let mut streak = 0;
+        while done.get(&day).is_some_and(|n| *n > 0) {
+            streak += 1;
+            day -= Duration::days(1);
+        }
+        Self { streak, this_week, total }
+    }
+
+    pub fn summary(&self) -> String {
+        tr!("breathing.stats", streak = self.streak, week = self.this_week, total = self.total)
+    }
+}
+
+/// Vinduet til at lave en ny øvelse (#30).
+pub(super) struct NewExercise {
+    name: String,
+    /// Ind, hold, ud, hold.
+    seconds: [u32; 4],
+    focused: bool,
+}
+
+impl Default for NewExercise {
+    fn default() -> Self {
+        Self { name: String::new(), seconds: [4, 0, 6, 0], focused: false }
     }
 }
 
 impl TimeSnapperApp {
+    /// Vinduet til en ny øvelse: fire tal og et navn, med figuren som forhåndsvisning.
+    pub(super) fn new_exercise_dialog(&mut self, ctx: &egui::Context) {
+        let Some(new) = &mut self.new_exercise else { return };
+        let mut save = false;
+        let mut cancel = false;
+        let modal = egui::Modal::new(egui::Id::unique("new_exercise")).show(ctx, |ui| {
+            ui.set_width(250.0);
+            ui.heading(tr!("breathing.new_title"));
+            ui.add_space(6.0);
+            egui::Grid::new("new_exercise_fields").num_columns(4).spacing([10.0, 4.0]).show(ui, |ui| {
+                let labels =
+                    [tr!("breathing.new_in"), tr!("breathing.new_hold"), tr!("breathing.new_out"), tr!("breathing.new_hold")];
+                for label in labels {
+                    ui.label(RichText::new(label).small());
+                }
+                ui.end_row();
+                for (i, secs) in new.seconds.iter_mut().enumerate() {
+                    // Ind og ud skal vare mindst et sekund; hold kan være 0.
+                    let min = if i % 2 == 0 { 1 } else { 0 };
+                    ui.add(egui::DragValue::new(secs).range(min..=30).suffix(" s"));
+                }
+                ui.end_row();
+            });
+            ui.add_space(6.0);
+            let response =
+                ui.add(egui::TextEdit::singleline(&mut new.name).hint_text(tr!("breathing.new_name")).desired_width(f32::INFINITY));
+            if !new.focused {
+                response.request_focus();
+                new.focused = true;
+            }
+            let exercise = Exercise::Custom(CustomExercise { name: new.name.clone(), seconds: new.seconds });
+            ui.vertical_centered(|ui| draw_box(ui, &exercise, None));
+            let valid = !new.name.trim().is_empty();
+            ui.horizontal(|ui| {
+                save |= ui.add_enabled(valid, egui::Button::new(tr!("common.save"))).clicked();
+                cancel |= ui.button(tr!("common.cancel")).clicked();
+            });
+            save |= valid && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        });
+        cancel |= modal.should_close();
+        if save {
+            let custom = CustomExercise { name: new.name.trim().to_owned(), seconds: new.seconds };
+            self.data.settings.breathing_exercise = Exercise::Custom(custom.clone());
+            if !self.data.settings.custom_exercises.contains(&custom) {
+                self.data.settings.custom_exercises.push(custom);
+            }
+            self.new_exercise = None;
+            self.save();
+        } else if cancel {
+            self.new_exercise = None;
+        }
+    }
+
     pub(super) fn start_breathing(&mut self) {
         let settings = &self.data.settings;
-        self.breathing = Some(Breathing::new(settings.breathing_exercise, settings.breathing_minutes));
+        self.breathing = Some(Breathing::new(settings.breathing_exercise.clone(), settings.breathing_minutes));
+    }
+
+    pub(super) fn breathing_stats(&self) -> BreathingStats {
+        BreathingStats::from(&self.data.breathing_done, Local::now().date_naive())
     }
 
     /// Viser øvelsesvinduet, mens en øvelse er i gang.
     pub(super) fn breathing_window(&mut self, ctx: &egui::Context) {
+        let Some(breathing) = &mut self.breathing else { return };
+        let step = step_at(&breathing.exercise, breathing.rounds, breathing.started.elapsed().as_secs_f32());
+        // Gennemført: tæl den med én gang.
+        if step == Step::Done && !std::mem::replace(&mut breathing.counted, true) {
+            *self.data.breathing_done.entry(Local::now().date_naive()).or_default() += 1;
+            self.save();
+        }
         let Some(breathing) = &self.breathing else { return };
-        let step = step_at(breathing.exercise, breathing.rounds, breathing.started.elapsed().as_secs_f32());
-        let (rounds, exercise) = (breathing.rounds, breathing.exercise);
+        let (rounds, exercise) = (breathing.rounds, breathing.exercise.clone());
+        let stats = self.breathing_stats().summary();
+        let all = Exercise::all(&self.data.settings.custom_exercises);
         let mut close = false;
         let mut again = false;
         // Skift øvelse i vinduet; gælder kun denne gang (standarden står i indstillingerne).
-        let mut chosen = exercise;
+        let mut chosen = exercise.clone();
 
         let builder = egui::ViewportBuilder::default()
             .with_title(tr!("breathing.window_title"))
@@ -175,8 +314,8 @@ impl TimeSnapperApp {
                         .width(200.0)
                         .selected_text(chosen.label())
                         .show_ui(ui, |ui| {
-                            for option in Exercise::ALL {
-                                ui.selectable_value(&mut chosen, option, option.label());
+                            for option in &all {
+                                ui.selectable_value(&mut chosen, option.clone(), option.label());
                             }
                         })
                         .response
@@ -188,12 +327,12 @@ impl TimeSnapperApp {
                         ui.add_space(30.0);
                         ui.heading(tr!("breathing.get_ready"));
                         ui.label(RichText::new(tr!("breathing.get_ready_hint")).weak());
-                        draw_box(ui, exercise, None);
+                        draw_box(ui, &exercise, None);
                         ui.label(RichText::new(format!("{}", left.ceil() as u32)).size(28.0).strong());
                     }
                     Step::Phase { round, index, phase, progress, left } => {
                         ui.label(RichText::new(tr!("breathing.round", round = round, rounds = rounds)).weak());
-                        draw_box(ui, exercise, Some((*index, *phase, *progress, *left)));
+                        draw_box(ui, &exercise, Some((*index, *phase, *progress, *left)));
                         ui.label(RichText::new(format!("{} {}", phase.icon(), phase.text())).size(17.0).strong());
                         ui.label(RichText::new(phase.hint()).italics().weak());
                     }
@@ -202,7 +341,9 @@ impl TimeSnapperApp {
                         ui.label(RichText::new("🌟").size(48.0).color(Color32::from_rgb(240, 190, 80)));
                         ui.heading(tr!("breathing.done"));
                         ui.label(RichText::new(tr!("breathing.done_hint")).weak());
-                        ui.add_space(20.0);
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(&stats).strong());
+                        ui.add_space(14.0);
                         ui.horizontal(|ui| {
                             ui.add_space((ui.available_width() - 150.0) / 2.0);
                             again |= ui.button(tr!("breathing.again")).clicked();
@@ -325,13 +466,13 @@ fn along(points: &[Pos2], fraction: f32) -> (Vec<Pos2>, Pos2) {
 
 /// Figuren med prikken, der følger siderne, og cirklen der "trækker vejret".
 /// `None` er gør-klar-trinnet (cirklen lille, prikken i startpunktet).
-fn draw_box(ui: &mut egui::Ui, exercise: Exercise, at: Option<(usize, Phase, f32, f32)>) {
+fn draw_box(ui: &mut egui::Ui, exercise: &Exercise, at: Option<(usize, Phase, f32, f32)>) {
     let size = 190.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(size + 30.0), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     let area = egui::Rect::from_center_size(rect.center(), Vec2::splat(size));
     let phases = exercise.phases();
-    let unit = figure(phases);
+    let unit = figure(&phases);
     // Uden hold er figuren en lodret linje; den står i venstre side, så cirklen
     // kan være i midten.
     let is_line = unit.iter().all(|p| (p.x - unit[0].x).abs() < 1e-4);
@@ -352,7 +493,7 @@ fn draw_box(ui: &mut egui::Ui, exercise: Exercise, at: Option<(usize, Phase, f32
     let line = |points: Vec<Pos2>, color: Color32| egui::Shape::line(points, Stroke::new(width, color));
 
     // Hele figuren svagt i fasernes farver, så rytmen kan ses.
-    for (points, (phase, _)) in edges.iter().zip(phases) {
+    for (points, (phase, _)) in edges.iter().zip(&phases) {
         painter.add(line(points.clone(), track));
         painter.add(line(points.clone(), phase.color().gamma_multiply(0.15)));
     }
@@ -361,7 +502,7 @@ fn draw_box(ui: &mut egui::Ui, exercise: Exercise, at: Option<(usize, Phase, f32
     let eased = (1.0 - (progress * PI).cos()) / 2.0;
     let color = phase.color();
     if at.is_some() {
-        for (points, (done, _)) in edges.iter().zip(phases).take(index) {
+        for (points, (done, _)) in edges.iter().zip(&phases).take(index) {
             painter.add(line(points.clone(), done.color().gamma_multiply(0.5)));
         }
         let (walked, dot) = along(&edges[index], progress);
@@ -412,12 +553,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn custom_exercise_skips_empty_holds() {
+        let custom = |seconds| Exercise::Custom(CustomExercise { name: "Min".into(), seconds });
+        let phases: Vec<Phase> = custom([4, 0, 7, 8]).phases().into_iter().map(|(p, _)| p).collect();
+        assert_eq!(phases, [Phase::In, Phase::Out, Phase::HoldEmpty]);
+        assert_eq!(custom([5, 0, 5, 5]).round_seconds(), 15.0);
+        assert_eq!(custom([4, 4, 4, 4]).phases(), Exercise::Box.phases(), "samme som boks");
+        assert_eq!(custom([4, 0, 7, 8]).label(), "Min (4-0-7-8)");
+        // Ind/ud på 0 tæller som 1 s, så runden aldrig er tom.
+        assert_eq!(custom([0, 0, 0, 0]).round_seconds(), 2.0);
+    }
+
+    #[test]
+    fn breathing_points_count_streak_week_and_total() {
+        let d = |day| NaiveDate::from_ymd_opt(2026, 11, day).unwrap();
+        // 9-11-2026 er en mandag.
+        let done = [(d(5), 2), (d(7), 1), (d(8), 1), (d(9), 3)].into_iter().collect();
+        let stats = BreathingStats::from(&done, d(9));
+        assert_eq!((stats.streak, stats.this_week, stats.total), (3, 3, 7));
+        // I dag ikke øvet endnu: rækken tæller stadig fra i går.
+        let stats = BreathingStats::from(&done, d(10));
+        assert_eq!((stats.streak, stats.this_week), (3, 3));
+        assert_eq!(BreathingStats::from(&done, d(12)).streak, 0);
+    }
+
+    #[test]
     fn box_breathing_rounds_and_phases() {
         assert_eq!(Exercise::Box.rounds_for(1), 4, "1 min ≈ 4 runder à 16 s");
         assert_eq!(Exercise::Box.rounds_for(2), 8);
 
-        assert!(matches!(step_at(Exercise::Box, 4, 1.0), Step::Prepare { .. }));
-        let at = |t| step_at(Exercise::Box, 4, PREPARE + t);
+        assert!(matches!(step_at(&Exercise::Box, 4, 1.0), Step::Prepare { .. }));
+        let at = |t| step_at(&Exercise::Box, 4, PREPARE + t);
         assert!(matches!(at(0.5), Step::Phase { round: 1, phase: Phase::In, .. }));
         assert!(matches!(at(5.0), Step::Phase { round: 1, phase: Phase::HoldFull, .. }));
         assert!(matches!(at(9.0), Step::Phase { round: 1, phase: Phase::Out, .. }));
@@ -439,7 +605,7 @@ mod tests {
 
     #[test]
     fn box_breathing_is_the_square() {
-        let p = figure(Exercise::Box.phases());
+        let p = figure(&Exercise::Box.phases());
         assert!(close(p[0], Pos2::new(0.0, 1.0)), "start nederst til venstre: {p:?}");
         assert!(close(p[1], Pos2::new(0.0, 0.0)), "op langs venstre side");
         assert!(close(p[2], Pos2::new(1.0, 0.0)), "hen over toppen");
@@ -449,7 +615,7 @@ mod tests {
     #[test]
     fn directions_show_what_to_do() {
         for exercise in [Exercise::FourSevenEight, Exercise::FiveSevenEight] {
-            let p = figure(exercise.phases());
+            let p = figure(&exercise.phases());
             let phases = exercise.phases();
             assert_eq!(p.len(), 3);
             for (i, (phase, _)) in phases.iter().enumerate() {
@@ -493,7 +659,7 @@ mod tests {
 
     #[test]
     fn in_and_out_without_holds_is_a_vertical_line() {
-        let p = figure(Exercise::Calm.phases());
+        let p = figure(&Exercise::Calm.phases());
         assert!(close(p[0], Pos2::new(0.5, 1.0)) && close(p[1], Pos2::new(0.5, 0.0)), "{p:?}");
     }
 }

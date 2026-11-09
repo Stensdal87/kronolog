@@ -20,7 +20,7 @@ use crate::idle::{IdleEvent, IdleWatcher};
 use crate::tray::{Tray, TrayAction, TrayProject, TrayState};
 use break_reminder::BreakReminder;
 use breathing::{Breathing, Exercise};
-use compact::{PendingMove, ProjectPicker, WindowLayout};
+use compact::{NORMAL_MIN_WIDTH, PendingMove, ProjectPicker, WindowLayout};
 use item_history::ItemHistory;
 use shortcuts_dialog::ShortcutsDialog;
 use crate::hotkeys::GlobalHotkeys;
@@ -129,7 +129,9 @@ pub struct TimeSnapperApp {
     /// Hvor meget en flytning skal justeres, fordi vinduesmanageren lægger
     /// titellinjen oveni (KWin/X11: ca. 28 px). Læres ved opstart og ved første
     /// rettede flytning, så senere flytninger lander rigtigt med det samme.
-    move_correction: Vec2,
+    /// Én for vinduet uden titellinje (indeks 0) og én med (indeks 1): KWin
+    /// lægger kun titellinjen oveni, når der er en (#31).
+    move_correction: [Vec2; 2],
     /// Om bjælken sidst voksede opad (bunden fast). Samme kant bruges, når den
     /// folder sig sammen igen, så den vender tilbage til samme sted.
     bar_anchor_bottom: Option<bool>,
@@ -137,6 +139,11 @@ pub struct TimeSnapperApp {
     bar_anchor_right: Option<bool>,
     /// Bjælkens retning, da størrelsen sidst blev sat.
     applied_vertical: bool,
+    /// Vinduet til at lave en ny åndedrætsøvelse (#30).
+    new_exercise: Option<breathing::NewExercise>,
+    /// Rammen (titellinje og kanter), sidst vinduet havde titellinje. Bruges til
+    /// at placere vinduet, når titellinjen kommer tilbage (#31).
+    decorated_frame: compact::FrameInsets,
     /// Et træk i bjælken er givet videre til vinduesmanageren.
     bar_drag_sent: bool,
     /// Den lodrette bjælke står i venstre side af skærmen, så teksten læses
@@ -235,10 +242,12 @@ impl TimeSnapperApp {
             layout_applied: false,
             picker: None,
             pending_move: None,
-            move_correction: Vec2::ZERO,
+            move_correction: [Vec2::ZERO; 2],
             bar_anchor_bottom: None,
             bar_anchor_right: None,
             applied_vertical: false,
+            decorated_frame: Default::default(),
+            new_exercise: None,
             bar_drag_sent: false,
             bar_on_left: false,
             window_icon_dot: false,
@@ -310,7 +319,8 @@ impl TimeSnapperApp {
         // eframe bad om den gemte placering og fik den plus titellinjen: det er
         // netop den justering, senere flytninger skal have.
         if drift.length() < 100.0 {
-            self.move_correction = drift;
+            // Ved opstart har vinduet titellinje, medmindre det er foldet sammen.
+            self.move_correction[usize::from(!self.data.compact)] = drift;
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(wanted + drift));
         } else {
             // Langt fra: eframe har selv flyttet vinduet, f.eks. ind fra Windows'
@@ -1254,6 +1264,13 @@ impl eframe::App for TimeSnapperApp {
         self.handle_pending_move(&ctx);
         self.update_bar_side(&ctx, frame);
         match layout {
+            // Lige efter start kan vinduet stadig have bjælkens størrelse (f.eks.
+            // hvis programmet blev slået ned med bjælken fremme), indtil
+            // `apply_layout` når at sætte den. Så smalt kan det fulde vindue ikke
+            // tegnes (egui går ned på negative bredder), så vent et øjeblik.
+            WindowLayout::Normal if ctx.content_rect().width() < NORMAL_MIN_WIDTH => {
+                ctx.request_repaint_after(StdDuration::from_millis(50));
+            }
             WindowLayout::Normal => self.full_ui(ui, &ctx),
             WindowLayout::Bar => {
                 egui::CentralPanel::default()
@@ -1292,6 +1309,7 @@ impl eframe::App for TimeSnapperApp {
         self.sleep_dialog(&ctx);
         self.break_dialog(&ctx);
         self.breathing_window(&ctx);
+        self.new_exercise_dialog(&ctx);
         self.item_history_window(&ctx, frame);
         self.rename_dialog(&ctx);
         self.shortcuts_dialog(&ctx);
@@ -1668,6 +1686,7 @@ impl TimeSnapperApp {
             || self.shortcuts_dialog.is_some()
             || self.break_reminder.is_open()
             || self.sleep_prompt.is_some()
+            || self.new_exercise.is_some()
     }
 
     /// Udfører en handling fra en genvejstast. `global` er når genvejen blev
@@ -2116,14 +2135,38 @@ impl TimeSnapperApp {
         }
         settings_section(ui, tr!("breathing.window_title"));
         let mut settings = self.data.settings.clone();
-        egui::ComboBox::from_id_salt("breathing_exercise")
-            .width(ui.available_width() - 8.0)
-            .selected_text(settings.breathing_exercise.label())
-            .show_ui(ui, |ui| {
-                for exercise in Exercise::ALL {
-                    ui.selectable_value(&mut settings.breathing_exercise, exercise, exercise.label());
-                }
-            });
+        let mut remove = None;
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("breathing_exercise")
+                // Panelet kan være meget smalt i første billede; aldrig negativ bredde.
+                .width((ui.available_width() - 36.0).max(40.0))
+                .selected_text(settings.breathing_exercise.label())
+                .show_ui(ui, |ui| {
+                    for exercise in Exercise::all(&settings.custom_exercises) {
+                        ui.horizontal(|ui| {
+                            // Egne øvelser kan slettes igen (#30).
+                            if let Exercise::Custom(custom) = &exercise
+                                && ui.small_button("×").on_hover_text(tr!("breathing.delete")).clicked()
+                            {
+                                remove = Some(custom.clone());
+                            }
+                            let label = exercise.label();
+                            ui.selectable_value(&mut settings.breathing_exercise, exercise, label);
+                        });
+                    }
+                });
+            if ui.button("+").on_hover_text(tr!("breathing.new_hint")).clicked() {
+                self.new_exercise = Some(Default::default());
+            }
+        });
+        if let Some(custom) = remove {
+            settings.custom_exercises.retain(|c| *c != custom);
+            if settings.breathing_exercise == Exercise::Custom(custom) {
+                settings.breathing_exercise = Exercise::default();
+            }
+        }
+        // Pointene (#29).
+        ui.label(RichText::new(self.breathing_stats().summary()).weak().small());
         ui.horizontal(|ui| {
             ui.label(tr!("settings.length"));
             ui.radio_value(&mut settings.breathing_minutes, 1, "1 min");
@@ -2162,7 +2205,22 @@ impl TimeSnapperApp {
         ui.add_enabled_ui(settings.auto_call, |ui| {
             ui.horizontal(|ui| {
                 ui.label(tr!("settings.call_apps"));
-                ui.add(egui::TextEdit::singleline(&mut settings.call_apps).desired_width(ui.available_width() - 8.0));
+                ui.add(egui::TextEdit::singleline(&mut settings.call_apps).desired_width((ui.available_width() - 36.0).max(40.0)));
+                // Vælg blandt programmer, der har brugt mikrofonen, så navnet er rigtigt (#28).
+                ui.menu_button("+", |ui| {
+                    let known = self.mic.known_apps();
+                    if known.is_empty() {
+                        ui.label(RichText::new(tr!("settings.no_mic_apps")).weak());
+                    }
+                    for app in known {
+                        if ui.button(app).clicked() {
+                            settings.call_apps = crate::mic::add_to_list(&settings.call_apps, app);
+                            ui.close();
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(tr!("settings.pick_mic_app"));
             });
         });
         let apps = self.mic.apps().join(", ");

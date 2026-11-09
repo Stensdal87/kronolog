@@ -40,9 +40,29 @@ impl ProjectPicker {
 /// titellinjen oveni (se `restore_window_position`).
 pub(super) struct PendingMove {
     target: Pos2,
+    /// Om vinduet har titellinje; afgør hvilken justering der læres.
+    decorated: bool,
     request: Pos2,
     at: Instant,
     tries: u8,
+}
+
+/// Rammen om vinduets indhold: titellinje og kanter. `min` er venstre/top,
+/// `max` højre/bund.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) struct FrameInsets {
+    min: Vec2,
+    max: Vec2,
+}
+
+impl FrameInsets {
+    fn between(outer: egui::Rect, inner: egui::Rect) -> Self {
+        Self { min: (inner.min - outer.min).max(Vec2::ZERO), max: (outer.max - inner.max).max(Vec2::ZERO) }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.min == Vec2::ZERO && self.max == Vec2::ZERO
+    }
 }
 
 const BAR_SIZE: Vec2 = Vec2::new(400.0, 38.0);
@@ -51,6 +71,8 @@ const VERTICAL_BAR_SIZE: Vec2 = Vec2::new(38.0, 400.0);
 const PICKER_HEIGHT: f32 = 420.0;
 const NORMAL_SIZE: Vec2 = Vec2::new(320.0, 520.0);
 const NORMAL_MIN_SIZE: Vec2 = Vec2::new(260.0, 300.0);
+/// Smallere end dette kan det fulde vindue ikke tegnes; se `ui`.
+pub(super) const NORMAL_MIN_WIDTH: f32 = 200.0;
 
 impl TimeSnapperApp {
     /// Hvilken visning der skal bruges lige nu. Dialoger kræver plads, så
@@ -93,13 +115,29 @@ impl TimeSnapperApp {
             WindowLayout::Bar => (BAR_SIZE, Vec2::new(240.0, BAR_SIZE.y)),
             WindowLayout::Picker => (Vec2::new(BAR_SIZE.x, PICKER_HEIGHT), Vec2::new(240.0, 200.0)),
         };
-        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(min_size));
-        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        // Rammen (titellinje og kanter) før og efter. Windows beholder vinduets
+        // ydre størrelse og placering, når titellinjen fjernes eller tilføjes, så
+        // indholdet vokser og flytter sig med titellinjens højde (#31, #32). På
+        // X11 kender winit ikke rammen (ydre = indre), og så er den 0 begge veje.
+        let outer = ctx.input(|i| i.viewport().outer_rect).unwrap_or(inner);
+        let old_frame = FrameInsets::between(outer, inner);
+        if self.layout == WindowLayout::Normal && !old_frame.is_zero() {
+            self.decorated_frame = old_frame;
+        }
+        let decorated = layout == WindowLayout::Normal;
+        let new_frame = if decorated { self.decorated_frame } else { FrameInsets::default() };
         // Bjælken har ingen titellinje (den lodrette er for smal til en, og den
         // vandrette ser pænere ud uden, #23); den flyttes ved at trække i den.
-        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(layout == WindowLayout::Normal));
+        // Titellinjen skiftes først, så størrelsen bagefter gælder indholdet uden
+        // (ellers blev bjælken titellinjens højde for høj på Windows).
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(decorated));
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(min_size));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
 
-        let mut top_left = inner.min;
+        // Placeringen regnes på vinduets ydre kant: den står fast, medmindre
+        // vinduet skal vokse opad eller mod venstre.
+        let outer_size = size + new_frame.min + new_frame.max;
+        let mut outer_min = outer.min;
         // Første gang ved opstart står vinduet allerede, hvor det blev gemt; dets
         // midlertidige størrelse (minimum 300 px høj) må ikke flytte det.
         if self.layout_applied
@@ -121,17 +159,17 @@ impl TimeSnapperApp {
                 _ => (in_lower_half, in_right_half),
             };
             if anchor_bottom {
-                top_left.y = inner.max.y - size.y;
+                outer_min.y = outer.max.y - outer_size.y;
             }
             // Den lodrette bjælke står typisk i højre side: hold den ved kanten.
             if self.data.bar_vertical && anchor_right {
-                top_left.x = inner.max.x - size.x;
+                outer_min.x = outer.max.x - outer_size.x;
             }
-            top_left.x = top_left.x.clamp(screen.min.x, (screen.max.x - size.x).max(screen.min.x));
-            top_left.y = top_left.y.clamp(screen.min.y, (screen.max.y - size.y).max(screen.min.y));
+            outer_min.x = outer_min.x.clamp(screen.min.x, (screen.max.x - outer_size.x).max(screen.min.x));
+            outer_min.y = outer_min.y.clamp(screen.min.y, (screen.max.y - outer_size.y).max(screen.min.y));
         }
-        if (top_left - inner.min).length() > 1.0 {
-            self.move_window_to(ctx, top_left);
+        if (outer_min - outer.min).length() > 1.0 {
+            self.move_outer_to(ctx, outer_min, outer_min + new_frame.min, decorated);
         }
         self.layout = layout;
         self.layout_applied = true;
@@ -151,13 +189,12 @@ impl TimeSnapperApp {
         }
     }
 
-    /// Flytter vinduet, så indholdet starter ved `target` (skærmpunkter).
-    fn move_window_to(&mut self, ctx: &egui::Context, target: Pos2) {
-        let (inner, outer) = ctx.input(|i| (i.viewport().inner_rect, i.viewport().outer_rect));
-        let (Some(inner), Some(outer)) = (inner, outer) else { return };
-        let request = outer.min + (target - inner.min) + self.move_correction;
+    /// Flytter vinduets ydre hjørne til `outer_min`; indholdet skal så starte ved
+    /// `target` (skærmpunkter), hvilket tjekkes bagefter.
+    fn move_outer_to(&mut self, ctx: &egui::Context, outer_min: Pos2, target: Pos2, decorated: bool) {
+        let request = outer_min + self.move_correction[usize::from(decorated)];
         ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(request));
-        self.pending_move = Some(PendingMove { target, request, at: Instant::now(), tries: 0 });
+        self.pending_move = Some(PendingMove { target, decorated, request, at: Instant::now(), tries: 0 });
         ctx.request_repaint_after(StdDuration::from_millis(150));
     }
 
@@ -169,7 +206,8 @@ impl TimeSnapperApp {
             ctx.request_repaint_after(wait);
             return;
         }
-        let Some(inner) = ctx.input(|i| i.viewport().inner_rect) else { return };
+        let (inner, outer) = ctx.input(|i| (i.viewport().inner_rect, i.viewport().outer_rect));
+        let Some(inner) = inner else { return };
         let off = pending.target - inner.min;
         if off.length() <= 1.0 || pending.tries >= 3 {
             self.pending_move = None;
@@ -177,8 +215,13 @@ impl TimeSnapperApp {
         }
         pending.request += off;
         pending.tries += 1;
-        // Husk afvigelsen, så næste flytning lander rigtigt i første forsøg.
-        self.move_correction += off;
+        // Husk afvigelsen, så næste flytning lander rigtigt i første forsøg. Kun
+        // når winit ikke kender rammen (X11/KWin lægger titellinjen oveni); på
+        // Windows er rammen kendt, og en afvigelse skyldes et forkert skøn over
+        // titellinjen, som ikke skal gentages ved næste flytning.
+        if outer.is_none_or(|outer| outer == inner) {
+            self.move_correction[usize::from(pending.decorated)] += off;
+        }
         pending.at = Instant::now();
         ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pending.request));
         ctx.request_repaint_after(wait);
