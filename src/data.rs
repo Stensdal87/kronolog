@@ -215,6 +215,12 @@ pub struct Data {
     /// Bjælken står lodret, f.eks. i siden af skærmen (#19).
     #[serde(default)]
     pub bar_vertical: bool,
+    /// Hjælpen er vist (den åbner af sig selv første gang).
+    #[serde(default)]
+    pub help_seen: bool,
+    /// "Vidste du…?" er skjult resten af denne dag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tips_hidden_on: Option<NaiveDate>,
     /// Gennemførte åndedrætsøvelser pr. dag, til pointene (#29).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub breathing_done: std::collections::BTreeMap<NaiveDate, u32>,
@@ -261,6 +267,8 @@ pub struct Settings {
     pub check_updates: bool,
     /// Prikken i bjælken og i systembakken blinker, mens tiden kører.
     pub blink: bool,
+    /// "Vidste du…?"-tips nederst i timer-fanen.
+    pub show_tips: bool,
     /// Tag telefonen, når et af `call_apps` bruger mikrofonen (#27).
     pub auto_call: bool,
     /// Programmerne, der tæller som opkald, adskilt med komma.
@@ -303,6 +311,7 @@ impl Default for Settings {
             language: Default::default(),
             check_updates: true,
             blink: true,
+            show_tips: true,
             auto_call: false,
             call_apps: "Teams, Zoom".to_owned(),
         }

@@ -18,10 +18,11 @@ pub enum Action {
     TimerTab,
     HistoryTab,
     Export,
+    Help,
 }
 
 impl Action {
-    pub const ALL: [Action; 10] = [
+    pub const ALL: [Action; 11] = [
         Action::SwitchProject,
         Action::Pause,
         Action::Call,
@@ -32,6 +33,7 @@ impl Action {
         Action::TimerTab,
         Action::HistoryTab,
         Action::Export,
+        Action::Help,
     ];
 
     pub fn label(self) -> String {
@@ -46,6 +48,7 @@ impl Action {
             Action::TimerTab => tr!("action.timer_tab"),
             Action::HistoryTab => tr!("action.history_tab"),
             Action::Export => tr!("action.export"),
+            Action::Help => tr!("action.help"),
         }
     }
 
@@ -70,6 +73,7 @@ impl Action {
             Action::TimerTab => ctrl(Key::Num1),
             Action::HistoryTab => ctrl(Key::Num2),
             Action::Export => ctrl(Key::E),
+            Action::Help => Some(KeyCombo { ctrl: false, alt: false, shift: false, key: Key::F1 }),
         }
     }
 

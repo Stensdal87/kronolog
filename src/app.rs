@@ -3,6 +3,7 @@
 mod break_reminder;
 pub(crate) mod breathing;
 mod compact;
+mod help;
 mod item_history;
 mod shortcuts_dialog;
 
@@ -141,6 +142,10 @@ pub struct TimeSnapperApp {
     applied_vertical: bool,
     /// Vinduet til at lave en ny åndedrætsøvelse (#30).
     new_exercise: Option<breathing::NewExercise>,
+    /// Hjælpevinduet (F1).
+    help: Option<help::Help>,
+    /// "Næste tip" er trykket så mange gange i dag.
+    tip_offset: usize,
     /// Rammen (titellinje og kanter), sidst vinduet havde titellinje. Bruges til
     /// at placere vinduet, når titellinjen kommer tilbage (#31).
     decorated_frame: compact::FrameInsets,
@@ -256,6 +261,8 @@ impl TimeSnapperApp {
             applied_vertical: false,
             decorated_frame: Default::default(),
             new_exercise: None,
+            help: None,
+            tip_offset: 0,
             bar_drag_sent: false,
             bar_on_left: false,
             window_icon_dot: false,
@@ -290,6 +297,7 @@ impl TimeSnapperApp {
         ctx.set_theme(app.data.theme.to_egui());
         if app.error.is_none() {
             app.save();
+            app.show_help_first_time();
         }
         app
     }
@@ -1319,6 +1327,7 @@ impl eframe::App for TimeSnapperApp {
         self.breathing_window(&ctx);
         self.new_exercise_dialog(&ctx);
         self.item_history_window(&ctx, frame);
+        self.help_window(&ctx, frame);
         self.rename_dialog(&ctx);
         self.shortcuts_dialog(&ctx);
         if layout == WindowLayout::Normal && self.picker.is_some() {
@@ -1367,6 +1376,10 @@ impl TimeSnapperApp {
                     {
                         self.apply_window_level(ctx);
                     }
+                    let help_hint = self.shortcut_hint(Action::Help);
+                    if ui.button("?").on_hover_text(format!("{}{help_hint}", tr!("action.help"))).clicked() {
+                        self.open_help(None);
+                    }
                 });
             });
         });
@@ -1407,6 +1420,9 @@ impl TimeSnapperApp {
             });
         self.settings_open = settings_open;
 
+        if self.tab == Tab::Timer {
+            self.tip_line(ui);
+        }
         egui::CentralPanel::default().show(ui, |ui| match self.tab {
             Tab::Timer => self.timer_tab(ui),
             Tab::History => self.history_tab(ui),
@@ -1739,6 +1755,7 @@ impl TimeSnapperApp {
                 self.data.compact = false;
                 self.export = Some(ExportDialog::new());
             }
+            Action::Help => self.open_help(None),
         }
         self.save();
         ctx.request_repaint();
@@ -1784,8 +1801,9 @@ impl TimeSnapperApp {
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         self.window_visible = false;
-        // Vinduet tegnes sammen med hovedvinduet og ville stå frosset.
+        // Vinduerne tegnes sammen med hovedvinduet og ville stå frosset.
         self.item_history = None;
+        self.help = None;
     }
 
     /// Stopper timeren og gemmer, inden programmet lukker.
@@ -2312,6 +2330,14 @@ impl TimeSnapperApp {
         }
 
         // Opdateringer (#26).
+        settings_section(ui, tr!("settings.help"));
+        if ui.button(format!("? {}", tr!("help.open"))).clicked() {
+            self.open_help(None);
+        }
+        if ui.checkbox(&mut self.data.settings.show_tips, tr!("settings.show_tips")).changed() {
+            self.save();
+        }
+
         settings_section(ui, tr!("settings.updates"));
         if ui.checkbox(&mut self.data.settings.check_updates, tr!("settings.check_updates")).changed() {
             self.save();

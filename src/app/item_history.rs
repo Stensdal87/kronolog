@@ -375,7 +375,7 @@ impl TimeSnapperApp {
 
 /// Placering (i punkter) der lægger et vindue af størrelsen `size` midt på den
 /// skærm, hovedvinduet står på.
-fn centered_on_screen(frame: &eframe::Frame, size: Vec2) -> Option<Pos2> {
+pub(super) fn centered_on_screen(frame: &eframe::Frame, size: Vec2) -> Option<Pos2> {
     let window = frame.winit_window()?;
     let monitor = window.current_monitor().or_else(|| window.primary_monitor())?;
     let scale = monitor.scale_factor() as f32;
