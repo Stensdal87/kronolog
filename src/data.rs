@@ -512,6 +512,22 @@ impl Data {
         }
     }
 
+    /// Flytter den kørende tid fra `at` til et andet projekt, f.eks. hvis man
+    /// glemte at skifte. Tiden før `at` gemmes på det hidtidige projekt (med dets
+    /// type og note), og tiden kører videre på `project_id` fra `at`. Er `at`
+    /// ved starten (eller før), flyttes det hele som `move_active`.
+    pub fn split_active(&mut self, at: DateTime<Local>, project_id: Id) {
+        let Some(active) = &self.active else { return };
+        let now = Local::now();
+        if at <= active.start + Duration::seconds(1) || active.project_id.is_none() {
+            self.move_active(project_id);
+            return;
+        }
+        let at = at.min(now);
+        self.stop_at(at);
+        self.active = Some(ActiveTimer { project_id: Some(project_id), start: at, last_seen: now, ..Default::default() });
+    }
+
     /// Stopper tiden pr. `at`, f.eks. da computeren gik i dvale (issue #6).
     /// Returnerer tidstagningen med uret frosset, så den kan genoptages.
     pub fn suspend(&mut self, at: DateTime<Local>) -> Option<ActiveTimer> {
@@ -891,6 +907,14 @@ impl Data {
 
     pub fn add_entry(&mut self, entry: TimeEntry) {
         self.entries.push(entry);
+    }
+
+    /// Retter registrering `index`, eller tilføjer en ny med `None`.
+    pub fn save_entry(&mut self, index: Option<usize>, entry: TimeEntry) {
+        match index {
+            Some(index) => self.update_entry(index, entry),
+            None => self.add_entry(entry),
+        }
     }
 
     pub fn update_entry(&mut self, index: usize, entry: TimeEntry) {
@@ -1680,6 +1704,37 @@ mod tests {
         assert!(loaded.active.is_none());
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].duration(), Duration::minutes(30));
+    }
+
+    #[test]
+    fn running_time_can_be_split_onto_another_project() {
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        let (a, b) = (data.add_project(c, "A"), data.add_project(c, "B"));
+        let start = Local::now() - Duration::minutes(90);
+        data.active = Some(ActiveTimer {
+            project_id: Some(a),
+            start,
+            last_seen: start,
+            description: "rettelser".into(),
+            ..Default::default()
+        });
+
+        let at = start + Duration::minutes(60);
+        data.split_active(at, b);
+        assert_eq!(data.entries.len(), 1);
+        let first = &data.entries[0];
+        assert_eq!((first.project_id, first.start, first.end), (a, start, at));
+        assert_eq!(first.description, "rettelser", "noten bliver på den første del");
+        let active = data.active.as_ref().unwrap();
+        assert_eq!((active.project_id, active.start), (Some(b), at));
+        assert!(active.elapsed() < Duration::minutes(31), "uret viser kun den flyttede tid");
+
+        // Fra starten: det hele flyttes, intet gemmes.
+        let active_start = active.start;
+        data.split_active(active_start, a);
+        assert_eq!(data.entries.len(), 1);
+        assert_eq!(data.active.as_ref().unwrap().project_id, Some(a));
     }
 
     #[test]

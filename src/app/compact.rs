@@ -28,6 +28,8 @@ pub(super) struct ProjectPicker {
     focused: bool,
     /// Flyt den kørende tidstagning i stedet for at starte en ny (issue #10).
     moving: bool,
+    /// Ved flytning: flyt kun tiden fra dette tidspunkt (del op); `None` er det hele.
+    from: Option<DateTime<Local>>,
 }
 
 impl ProjectPicker {
@@ -390,6 +392,25 @@ impl TimeSnapperApp {
                 close |= ui.small_button("×").on_hover_text(tr!("picker.close")).clicked();
             });
         });
+        // Flyt kun den sidste del af tiden, hvis man glemte at skifte projekt
+        // undervejs; helt til venstre flyttes det hele som før.
+        if picker.moving
+            && let Some(active) = &self.data.active
+        {
+            let start = active.start;
+            let mut at = picker.from.unwrap_or(start);
+            if crate::entry_editor::split_slider(ui, start, Local::now(), &mut at) {
+                picker.from = Some(at);
+            }
+            let whole = at <= start + Duration::seconds(59);
+            let hint = if whole {
+                tr!("picker.move_all")
+            } else {
+                tr!("picker.move_from", time = at.format("%H:%M"), minutes = (Local::now() - at).num_minutes())
+            };
+            ui.label(RichText::new(hint).weak().small());
+            ui.separator();
+        }
         let response = ui.add(
             egui::TextEdit::singleline(&mut picker.search)
                 .hint_text(tr!("common.search_hint"))
@@ -459,7 +480,10 @@ impl TimeSnapperApp {
         }
         if let Some(id) = chosen {
             if picker.moving {
-                self.data.move_active(id);
+                match picker.from {
+                    Some(at) => self.data.split_active(at, id),
+                    None => self.data.move_active(id),
+                }
             } else {
                 self.data.start(id);
             }

@@ -1,7 +1,7 @@
 //! Dialog til at rette, slette eller tilføje en registrering.
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeDelta, TimeZone, Timelike};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, Color32, RichText, Vec2};
 
 use crate::data::{format_duration, Data, Id, TimeEntry, NOTE_PAUSE, NOTE_PHONE};
 
@@ -10,7 +10,37 @@ pub enum EditorAction {
     Cancel,
     /// Gem registreringen: `Some(index)` retter en eksisterende, `None` tilføjer en ny.
     Save(Option<usize>, TimeEntry),
+    /// Gem den første del som `Save` og tilføj den anden del (del op).
+    Split(Option<usize>, TimeEntry, TimeEntry),
     Delete(usize),
+}
+
+impl EditorAction {
+    /// Udfører handlingen på data. Giver `true`, når dialogen skal lukkes.
+    pub fn apply(self, data: &mut Data) -> bool {
+        match self {
+            EditorAction::None => return false,
+            EditorAction::Cancel => {}
+            EditorAction::Save(index, entry) => data.save_entry(index, entry),
+            EditorAction::Split(index, first, second) => {
+                data.save_entry(index, first);
+                data.add_entry(second);
+            }
+            EditorAction::Delete(index) => data.delete_entry(index),
+        }
+        true
+    }
+}
+
+/// At dele registreringen op i to, f.eks. når man har glemt at skifte projekt.
+/// Første del beholder projekt, type og note; anden del får sit eget projekt.
+struct Split {
+    /// Hvor der deles (klokkeslæt).
+    at: String,
+    /// Første dels længde i minutter; følger `at` og omvendt.
+    minutes: String,
+    project_id: Option<Id>,
+    description: String,
 }
 
 pub struct EntryEditor {
@@ -29,6 +59,8 @@ pub struct EntryEditor {
     end_source: EndSource,
     description: String,
     confirm_delete: bool,
+    /// Del op i to, når den er foldet ud.
+    split: Option<Split>,
 }
 
 /// Hvad sluttiden regnes ud fra, når starttiden ændres.
@@ -59,6 +91,7 @@ impl EntryEditor {
             end_source: EndSource::End,
             description: entry.description.clone(),
             confirm_delete: false,
+            split: None,
         }
     }
 
@@ -89,6 +122,7 @@ impl EntryEditor {
             end_source: EndSource::Auto,
             description: String::new(),
             confirm_delete: false,
+            split: None,
         };
         editor.start_changed();
         editor
@@ -157,8 +191,102 @@ impl EntryEditor {
         Ok(TimeEntry { project_id, start, end, note: self.note.clone(), description: self.description.trim().to_owned() })
     }
 
+    /// De to dele, eller hvad der er galt.
+    fn build_split(&self, entry: &TimeEntry) -> Result<(TimeEntry, TimeEntry), String> {
+        let Some(split) = &self.split else { return Err(String::new()) };
+        let at = to_local(entry.start.date_naive(), parse_time(&split.at).ok_or_else(|| tr!("split.err_time"))?)?;
+        if at <= entry.start || at >= entry.end {
+            return Err(tr!("split.err_inside"));
+        }
+        let project_id = split.project_id.ok_or_else(|| tr!("split.err_project"))?;
+        let first = TimeEntry { end: at, ..entry.clone() };
+        let second =
+            TimeEntry { project_id, start: at, end: entry.end, note: None, description: split.description.trim().to_owned() };
+        Ok((first, second))
+    }
+
+    /// Fold "del op" ud med delingen midt i registreringen.
+    fn start_split(&mut self, entry: &TimeEntry) {
+        let middle = entry.start + (entry.end - entry.start) / 2;
+        let at = round_to_five(middle).clamp(entry.start, entry.end);
+        self.split = Some(Split {
+            at: at.format("%H:%M").to_string(),
+            minutes: (at - entry.start).num_minutes().to_string(),
+            project_id: None,
+            description: String::new(),
+        });
+    }
+
+    /// Sektionen til at dele op: skyder, klokkeslæt/minutter, projekt og note
+    /// til anden del, og hvordan de to dele bliver.
+    fn split_ui(&mut self, ui: &mut egui::Ui, data: &Data, entry: Option<&TimeEntry>) {
+        if self.split.is_none() {
+            return;
+        }
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(tr!("split.title")).strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("×").on_hover_text(tr!("split.cancel")).clicked() {
+                    self.split = None;
+                }
+            });
+        });
+        let Some(split) = &mut self.split else { return };
+        if let Some(entry) = entry {
+            let mut at = parse_time(&split.at)
+                .and_then(|t| to_local(entry.start.date_naive(), t).ok())
+                .unwrap_or(entry.start);
+            if split_slider(ui, entry.start, entry.end, &mut at) {
+                split.at = at.format("%H:%M").to_string();
+                split.minutes = (at - entry.start).num_minutes().to_string();
+            }
+        }
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.0;
+            ui.label(tr!("split.at"));
+            let mut at_changed = ui.add(time_field(&mut split.at, String::new())).changed();
+            at_changed |= time_menu(ui, "split_menu", &mut split.at);
+            ui.label("·");
+            let minutes_changed = ui
+                .add(egui::TextEdit::singleline(&mut split.minutes).desired_width(28.0).margin(egui::Margin::symmetric(3, 2)))
+                .changed();
+            ui.label(tr!("split.minutes_first"));
+            if let Some(entry) = entry {
+                if at_changed
+                    && let Some(at) = parse_time(&split.at).and_then(|t| to_local(entry.start.date_naive(), t).ok())
+                {
+                    split.minutes = (at - entry.start).num_minutes().to_string();
+                }
+                if minutes_changed && let Some(minutes) = parse_minutes(&split.minutes) {
+                    split.at = (entry.start + TimeDelta::minutes(minutes)).format("%H:%M").to_string();
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(tr!("split.second"));
+            project_combo(ui, data, "split_project", &mut split.project_id);
+        });
+        ui.add(
+            egui::TextEdit::singleline(&mut split.description)
+                .hint_text(tr!("split.note_hint"))
+                .desired_width(f32::INFINITY),
+        );
+    }
+
     pub fn show(&mut self, ctx: &egui::Context, data: &Data) -> EditorAction {
         let built = self.build();
+        // Med "del op" foldet ud gemmes de to dele.
+        let built_split = match (&built, &self.split) {
+            (Ok(entry), Some(_)) => Some(self.build_split(entry)),
+            _ => None,
+        };
+        let can_save = built.is_ok() && built_split.as_ref().is_none_or(|s| s.is_ok());
+        let save_action = |index: Option<usize>| match (&built, &built_split) {
+            (_, Some(Ok((first, second)))) => EditorAction::Split(index, first.clone(), second.clone()),
+            (Ok(entry), None) => EditorAction::Save(index, entry.clone()),
+            _ => EditorAction::None,
+        };
         let mut action = EditorAction::None;
 
         let modal = egui::Modal::new(egui::Id::unique("entry_editor")).show(ctx, |ui| {
@@ -218,9 +346,36 @@ impl EntryEditor {
                 ui.end_row();
             });
 
+            // Del op i to (f.eks. hvis man glemte at skifte projekt).
+            if self.split.is_none() && !self.confirm_delete {
+                let button = ui.add_enabled(built.is_ok(), egui::Button::new(tr!("split.button")).small());
+                if button.on_hover_text(tr!("split.button_hint")).clicked()
+                    && let Ok(entry) = &built
+                {
+                    self.start_split(entry);
+                }
+            }
+            if self.split.is_some() {
+                self.split_ui(ui, data, built.as_ref().ok());
+            }
+
             ui.add_space(4.0);
-            match &built {
-                Ok(entry) => {
+            match (&built, &built_split) {
+                (_, Some(Ok((first, second)))) => {
+                    for part in [first, second] {
+                        ui.label(format!(
+                            "{}–{}  {}  ({})",
+                            part.start.format("%H:%M"),
+                            part.end.format("%H:%M"),
+                            data.project_label(part.project_id),
+                            format_duration(part.duration())
+                        ));
+                    }
+                }
+                (_, Some(Err(e))) => {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                (Ok(entry), None) => {
                     ui.label(tr!("editor.duration", duration = format_duration(entry.duration())));
                     let overlaps = data.overlapping(entry, self.index);
                     if !overlaps.is_empty() {
@@ -238,7 +393,7 @@ impl EntryEditor {
                         }
                     }
                 }
-                Err(e) => {
+                (Err(e), None) => {
                     ui.colored_label(ui.visuals().error_fg_color, e);
                 }
             }
@@ -262,8 +417,8 @@ impl EntryEditor {
             }
 
             ui.horizontal(|ui| {
-                if ui.add_enabled(built.is_ok(), egui::Button::new(tr!("common.save"))).on_hover_text("Enter").clicked() {
-                    action = save(self.index, &built);
+                if ui.add_enabled(can_save, egui::Button::new(tr!("common.save"))).on_hover_text("Enter").clicked() {
+                    action = save_action(self.index);
                 }
                 if ui.button(tr!("common.cancel")).on_hover_text("Esc").clicked() {
                     action = EditorAction::Cancel;
@@ -276,8 +431,8 @@ impl EntryEditor {
                     });
                 }
             });
-            if ui.input(|i| i.key_pressed(egui::Key::Enter)) && built.is_ok() {
-                action = save(self.index, &built);
+            if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_save {
+                action = save_action(self.index);
             }
         });
 
@@ -288,22 +443,64 @@ impl EntryEditor {
     }
 
     fn project_combo(&mut self, ui: &mut egui::Ui, data: &Data) {
-        let selected = self.project_id.map_or_else(|| tr!("editor.choose_project"), |id| data.project_label(id));
-        // Et slettet projekt kan stadig vælges for registreringer, der allerede ligger på det.
-        let current_deleted = self.project_id.filter(|id| data.project(*id).is_some_and(|p| p.deleted));
-        let mut ids: Vec<Id> = data.visible_projects().map(|p| p.id).collect();
-        ids.extend(current_deleted);
-        ids.sort_by_key(|id| (!data.is_internal(*id), data.project_label(*id).to_lowercase()));
-
-        egui::ComboBox::from_id_salt("entry_project")
-            .width(200.0)
-            .selected_text(selected)
-            .show_ui(ui, |ui| {
-                for id in ids {
-                    ui.selectable_value(&mut self.project_id, Some(id), data.project_label(id));
-                }
-            });
+        project_combo(ui, data, "entry_project", &mut self.project_id);
     }
+}
+
+/// Vælg projekt. Et slettet projekt kan stadig vælges for registreringer, der
+/// allerede ligger på det.
+fn project_combo(ui: &mut egui::Ui, data: &Data, id_salt: &str, project_id: &mut Option<Id>) {
+    let selected = project_id.map_or_else(|| tr!("editor.choose_project"), |id| data.project_label(id));
+    let current_deleted = project_id.filter(|id| data.project(*id).is_some_and(|p| p.deleted));
+    let mut ids: Vec<Id> = data.visible_projects().map(|p| p.id).collect();
+    ids.extend(current_deleted);
+    ids.sort_by_key(|id| (!data.is_internal(*id), data.project_label(*id).to_lowercase()));
+
+    egui::ComboBox::from_id_salt(id_salt).width(200.0).selected_text(selected).show_ui(ui, |ui| {
+        for id in ids {
+            ui.selectable_value(project_id, Some(id), data.project_label(id));
+        }
+    });
+}
+
+/// En skyder over tidsrummet `start`–`end`, der hopper i hele 5 minutter, til
+/// at vælge hvor der deles. Viser klokkeslættet og minutterne på hver side.
+/// Giver `true`, når den er flyttet.
+pub fn split_slider(ui: &mut egui::Ui, start: DateTime<Local>, end: DateTime<Local>, at: &mut DateTime<Local>) -> bool {
+    let total = (end - start).num_minutes().max(1);
+    let mut minutes = (*at - start).num_minutes().clamp(0, total);
+    let before = minutes;
+    ui.spacing_mut().slider_width = ui.available_width();
+    let response = ui.add(egui::Slider::new(&mut minutes, 0..=total).step_by(5.0).show_value(false));
+    let shown = start + TimeDelta::minutes(minutes);
+    // Teksterne tegnes på faste pladser (venstre, midt, højre). I et layout
+    // flyttede klokkeslættet sig, når tallene ved siden af skiftede bredde.
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), font.size + 4.0), egui::Sense::hover());
+    let painter = ui.painter();
+    let (weak, strong) = (ui.visuals().weak_text_color(), ui.visuals().strong_text_color());
+    painter.text(row.left_center(), egui::Align2::LEFT_CENTER, format_minutes(minutes), font.clone(), weak);
+    painter.text(row.center(), egui::Align2::CENTER_CENTER, shown.format("%H:%M").to_string(), font.clone(), strong);
+    painter.text(row.right_center(), egui::Align2::RIGHT_CENTER, format_minutes(total - minutes), font, weak);
+    if response.changed() && minutes != before {
+        *at = shown;
+        true
+    } else {
+        false
+    }
+}
+
+/// "1:30" eller "45 min".
+fn format_minutes(minutes: i64) -> String {
+    if minutes >= 60 { format!("{}:{:02}", minutes / 60, minutes % 60) } else { format!("{minutes} min") }
+}
+
+/// Rundet til nærmeste hele 5 minutter.
+fn round_to_five(time: DateTime<Local>) -> DateTime<Local> {
+    let minutes = time.minute() as i64;
+    let rounded = (minutes + 2) / 5 * 5;
+    let base = time.with_second(0).and_then(|t| t.with_nanosecond(0)).unwrap_or(time);
+    base + TimeDelta::minutes(rounded - minutes)
 }
 
 fn time_field(text: &mut String, hint: String) -> egui::TextEdit<'_> {
@@ -361,13 +558,6 @@ fn parse_minutes(text: &str) -> Option<i64> {
         None => text.parse().ok()?,
     };
     (minutes > 0).then_some(minutes)
-}
-
-fn save(index: Option<usize>, built: &Result<TimeEntry, String>) -> EditorAction {
-    match built {
-        Ok(entry) => EditorAction::Save(index, entry.clone()),
-        Err(_) => EditorAction::None,
-    }
 }
 
 fn to_local(date: NaiveDate, time: NaiveTime) -> Result<DateTime<Local>, String> {
@@ -430,6 +620,36 @@ mod tests {
         assert_eq!(parse_date("20.10.2026"), d);
         assert_eq!(parse_date("2026-10-20"), d);
         assert_eq!(parse_date("32-10-2026"), None);
+    }
+
+    #[test]
+    fn entry_splits_in_two_at_the_chosen_time() {
+        let start = Local.with_ymd_and_hms(2026, 10, 20, 9, 0, 0).unwrap();
+        let end = Local.with_ymd_and_hms(2026, 10, 20, 12, 0, 0).unwrap();
+        let entry = TimeEntry { project_id: 1, start, end, description: "a".into(), ..Default::default() };
+        let mut editor = EntryEditor::edit(3, &entry);
+        editor.start_split(&entry);
+        assert_eq!(editor.split.as_ref().unwrap().at, "10:30", "midt i");
+        assert_eq!(editor.split.as_ref().unwrap().minutes, "90");
+        assert!(editor.build_split(&entry).is_err(), "anden dels projekt mangler");
+
+        let split = editor.split.as_mut().unwrap();
+        split.project_id = Some(2);
+        split.at = "11:15".into();
+        let (first, second) = editor.build_split(&entry).unwrap();
+        let at = Local.with_ymd_and_hms(2026, 10, 20, 11, 15, 0).unwrap();
+        assert_eq!((first.project_id, first.start, first.end, first.description.as_str()), (1, start, at, "a"));
+        assert_eq!((second.project_id, second.start, second.end), (2, at, end));
+
+        editor.split.as_mut().unwrap().at = "12:30".into();
+        assert!(editor.build_split(&entry).is_err(), "uden for registreringen");
+
+        let mut data = Data::default();
+        data.entries = vec![entry.clone(); 4];
+        assert!(EditorAction::Split(Some(3), first, second).apply(&mut data));
+        assert_eq!(data.entries.len(), 5);
+        assert_eq!(data.entries[3].end, at);
+        assert_eq!(data.entries[4].start, at);
     }
 
     #[test]

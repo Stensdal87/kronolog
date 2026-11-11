@@ -14,7 +14,7 @@ use std::time::{Duration as StdDuration, Instant};
 use chrono::{DateTime, Duration, Local, NaiveDate};
 use eframe::egui::{self, Color32, Pos2, RichText, Stroke, Vec2};
 
-use crate::entry_editor::{EditorAction, EntryEditor};
+use crate::entry_editor::EntryEditor;
 use crate::export_dialog::ExportDialog;
 use crate::idle::{IdleEvent, IdleWatcher};
 use crate::tray::{Tray, TrayAction, TrayProject, TrayState};
@@ -1141,12 +1141,8 @@ impl TimeSnapperApp {
 
     fn entry_editor(&mut self, ctx: &egui::Context) {
         let Some(editor) = self.editor.as_mut() else { return };
-        match editor.show(ctx, &self.data) {
-            EditorAction::None => return,
-            EditorAction::Cancel => {}
-            EditorAction::Save(Some(index), entry) => self.data.update_entry(index, entry),
-            EditorAction::Save(None, entry) => self.data.add_entry(entry),
-            EditorAction::Delete(index) => self.data.delete_entry(index),
+        if !editor.show(ctx, &self.data).apply(&mut self.data) {
+            return;
         }
         self.editor = None;
         self.save();

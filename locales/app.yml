@@ -1127,3 +1127,42 @@ settings.open_mic_log:
 settings.open_mic_log_hint:
   da: "mic-log.txt viser, hvornår mikrofonen blev brugt, og hvad Time Snapper gjorde. Send den, hvis et opkald ikke blev registreret."
   en: "mic-log.txt shows when the microphone was used and what Time Snapper did. Send it if a call was not registered."
+split.button:
+  da: "✂ Del op…"
+  en: "✂ Split…"
+split.button_hint:
+  da: "Del registreringen i to, f.eks. hvis du glemte at skifte projekt"
+  en: "Split the entry in two, e.g. if you forgot to switch project"
+split.title:
+  da: "Del op i to"
+  en: "Split in two"
+split.cancel:
+  da: "Del ikke op"
+  en: "Don't split"
+split.at:
+  da: "Del ved"
+  en: "Split at"
+split.minutes_first:
+  da: "min til første del"
+  en: "min to the first part"
+split.second:
+  da: "Anden del:"
+  en: "Second part:"
+split.note_hint:
+  da: "Note til anden del"
+  en: "Note for the second part"
+split.err_time:
+  da: "Skriv hvor der skal deles (tt:mm)"
+  en: "Enter where to split (hh:mm)"
+split.err_inside:
+  da: "Delingen skal ligge mellem start og slut"
+  en: "The split must be between start and end"
+split.err_project:
+  da: "Vælg projekt til anden del"
+  en: "Choose a project for the second part"
+picker.move_all:
+  da: "Hele den kørende tid flyttes. Træk i skyderen for kun at flytte den sidste del."
+  en: "All of the running time is moved. Drag the slider to move only the last part."
+picker.move_from:
+  da: "Tiden fra %{time} (de sidste %{minutes} min) flyttes; tiden før bliver på det nuværende projekt."
+  en: "Time from %{time} (the last %{minutes} min) is moved; the time before stays on the current project."

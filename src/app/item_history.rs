@@ -136,28 +136,12 @@ impl TimeSnapperApp {
     fn item_history_dialogs(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
         let always_on_top = self.always_on_top;
         let Some(history) = self.item_history.as_mut() else { return };
-        if let Some(editor) = history.editor.as_mut() {
-            let done = match editor.show(ctx, &self.data) {
-                EditorAction::None => false,
-                EditorAction::Cancel => true,
-                EditorAction::Save(Some(index), entry) => {
-                    self.data.update_entry(index, entry);
-                    true
-                }
-                EditorAction::Save(None, entry) => {
-                    self.data.add_entry(entry);
-                    true
-                }
-                EditorAction::Delete(index) => {
-                    self.data.delete_entry(index);
-                    true
-                }
-            };
-            if done {
-                history.editor = None;
-                self.save();
-                return;
-            }
+        if let Some(editor) = history.editor.as_mut()
+            && editor.show(ctx, &self.data).apply(&mut self.data)
+        {
+            history.editor = None;
+            self.save();
+            return;
         }
         if let Some(export) = history.export.as_mut()
             && !export.show(ctx, &self.data, frame, always_on_top)
