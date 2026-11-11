@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Duration, Local, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 pub type Id = u64;
@@ -34,6 +34,12 @@ pub struct Project {
     /// Slettede projekter skjules, men beholdes så historikken stadig kan vise navnet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deleted: bool,
+    /// Står øverst under ⭐ Favoritter.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub favorite: bool,
+    /// Timebudget i minutter; der advares, når tiden nærmer sig.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_minutes: Option<u32>,
 }
 
 /// En afsluttet tidsregistrering.
@@ -267,6 +273,11 @@ pub struct Settings {
     pub check_updates: bool,
     /// Prikken i bjælken og i systembakken blinker, mens tiden kører.
     pub blink: bool,
+    /// Vis dagsmålet (den grønne ring i uret).
+    pub daily_goal: bool,
+    /// Dagsmål i minutter pr. ugedag (mandag først); 0 = intet mål den dag.
+    /// Huskes, når dagsmålet slås fra.
+    pub goal_minutes: [u32; 7],
     /// "Glemt at starte tiden?" efter `forgot_minutes` ved computeren uden tid.
     pub forgot_reminder: bool,
     pub forgot_minutes: u32,
@@ -296,6 +307,14 @@ pub enum SortOrder {
     Recent,
 }
 
+impl Settings {
+    /// Dagens mål, hvis dagsmålet er slået til og dagen har et.
+    pub fn goal_for(&self, date: NaiveDate) -> Option<Duration> {
+        let minutes = self.goal_minutes[date.weekday().num_days_from_monday() as usize];
+        (self.daily_goal && minutes > 0).then(|| Duration::minutes(minutes as i64))
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -314,6 +333,9 @@ impl Default for Settings {
             language: Default::default(),
             check_updates: true,
             blink: true,
+            daily_goal: false,
+            // 7:30 mandag–torsdag, 7:00 fredag, intet i weekenden.
+            goal_minutes: [450, 450, 450, 450, 420, 0, 0],
             forgot_reminder: true,
             forgot_minutes: 15,
             show_tips: true,
@@ -417,8 +439,91 @@ impl Data {
 
     pub fn add_project(&mut self, customer_id: Id, name: &str) -> Id {
         let id = self.new_id();
-        self.projects.push(Project { id, customer_id, name: name.to_owned(), deleted: false });
+        self.projects.push(Project {
+            id,
+            customer_id,
+            name: name.to_owned(),
+            deleted: false,
+            favorite: false,
+            budget_minutes: None,
+        });
         id
+    }
+
+    /// Favoritprojekterne (ikke slettede), sorteret efter navn.
+    pub fn favorites(&self) -> Vec<&Project> {
+        let mut favorites: Vec<&Project> = self.visible_projects().filter(|p| p.favorite).collect();
+        favorites.sort_by_key(|p| self.project_label(p.id).to_lowercase());
+        favorites
+    }
+
+    pub fn toggle_favorite(&mut self, project_id: Id) {
+        if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            p.favorite = !p.favorite;
+        }
+    }
+
+    /// Sætter projektets timebudget (`None` eller 0 fjerner det).
+    pub fn set_budget(&mut self, project_id: Id, minutes: Option<u32>) {
+        if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            p.budget_minutes = minutes.filter(|m| *m > 0);
+        }
+    }
+
+    /// Brugt tid og budget, hvis projektet har et.
+    pub fn budget(&self, project_id: Id) -> Option<(Duration, Duration)> {
+        let budget = self.project(project_id)?.budget_minutes?;
+        Some((self.project_total(project_id), Duration::minutes(budget as i64)))
+    }
+
+    /// Kunder og projekter som par (kunde, projekt) til deling med kolleger;
+    /// en kunde uden projekter giver (kunde, ""). Ikke den interne kunde.
+    pub fn project_list(&self) -> Vec<(String, String)> {
+        let mut list = Vec::new();
+        for customer in self.visible_customers().filter(|c| !self.is_internal_customer(c.id)) {
+            let projects = self.customer_projects(customer.id);
+            if projects.is_empty() {
+                list.push((customer.name.clone(), String::new()));
+            }
+            list.extend(projects.into_iter().map(|p| (customer.name.clone(), p.name.clone())));
+        }
+        list
+    }
+
+    /// Tilføjer de kunder og projekter fra en delt liste, der mangler (navne
+    /// sammenlignes uden hensyn til store/små bogstaver). Nye kunder får ikke
+    /// skabelonens projekter. Giver antal nye kunder og projekter.
+    pub fn import_project_list(&mut self, list: &[(String, String)]) -> (usize, usize) {
+        let (mut customers, mut projects) = (0, 0);
+        for (customer, project) in list {
+            let (customer, project) = (customer.trim(), project.trim());
+            if customer.is_empty() {
+                continue;
+            }
+            let existing = self.visible_customers().find(|c| same_name(&c.name, customer)).map(|c| c.id);
+            let customer_id = match existing {
+                Some(id) => id,
+                None => {
+                    customers += 1;
+                    self.add_customer(customer)
+                }
+            };
+            if !project.is_empty()
+                && !self.visible_projects().any(|p| p.customer_id == customer_id && same_name(&p.name, project))
+            {
+                self.add_project(customer_id, project);
+                projects += 1;
+            }
+        }
+        (customers, projects)
+    }
+
+    /// Dagens arbejdstid (uden pauser), til dagsmålet.
+    pub fn work_day_total(&self, date: NaiveDate) -> Duration {
+        self.entries_on(date)
+            .iter()
+            .filter(|e| !e.entry.note.as_deref().is_some_and(|n| n == NOTE_PAUSE))
+            .fold(Duration::zero(), |sum, e| sum + e.entry.duration())
     }
 
     /// Id på projektet "Intern tid". Opretter kunden "Intern" og projektet, hvis de mangler.
@@ -1755,6 +1860,65 @@ mod tests {
         assert!(loaded.active.is_none());
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].duration(), Duration::minutes(30));
+    }
+
+    #[test]
+    fn shared_list_adds_only_what_is_missing() {
+        let mut data = Data::default();
+        let c = data.add_customer("Acme");
+        data.add_project(c, "Web");
+        let list: Vec<(String, String)> = [("acme", "web"), ("Acme", "App"), ("Ny", ""), ("Ny", "Drift"), ("", "x")]
+            .into_iter()
+            .map(|(a, b)| (a.to_owned(), b.to_owned()))
+            .collect();
+        assert_eq!(data.import_project_list(&list), (1, 2), "Ny + App og Drift");
+        assert_eq!(data.import_project_list(&list), (0, 0), "anden gang er alt der");
+
+        // Eksporten indeholder ikke den interne kunde.
+        data.internal_project_id();
+        let exported = data.project_list();
+        assert!(exported.contains(&("Acme".into(), "App".into())));
+        assert!(exported.iter().all(|(customer, _)| customer != &data.customers[data.customers.len() - 1].name));
+    }
+
+    #[test]
+    fn favorites_budget_and_work_time() {
+        let mut data = Data::default();
+        let c = data.add_customer("K");
+        let (a, b) = (data.add_project(c, "B-projekt"), data.add_project(c, "A-projekt"));
+        data.toggle_favorite(a);
+        data.toggle_favorite(b);
+        let names: Vec<&str> = data.favorites().iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["A-projekt", "B-projekt"], "sorteret efter navn");
+        data.toggle_favorite(a);
+        assert_eq!(data.favorites().len(), 1);
+
+        let today = Local::now().date_naive();
+        let at = |h, m| today.and_hms_opt(h, m, 0).unwrap().and_local_timezone(Local).unwrap();
+        data.entries.push(TimeEntry { project_id: a, start: at(8, 0), end: at(10, 0), ..Default::default() });
+        let pause = data.internal_project_id();
+        data.entries.push(TimeEntry {
+            project_id: pause,
+            start: at(10, 0),
+            end: at(10, 30),
+            note: Some(NOTE_PAUSE.into()),
+            ..Default::default()
+        });
+        assert_eq!(data.work_day_total(today), Duration::hours(2), "pauser tæller ikke med i dagsmålet");
+
+        let mut settings = Settings::default();
+        let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap(); // 9. er en mandag
+        assert_eq!(settings.goal_for(day(9)), None, "slået fra som standard");
+        settings.daily_goal = true;
+        assert_eq!(settings.goal_for(day(9)), Some(Duration::minutes(450)), "mandag 7:30");
+        assert_eq!(settings.goal_for(day(13)), Some(Duration::minutes(420)), "fredag 7:00");
+        assert_eq!(settings.goal_for(day(14)), None, "intet mål om lørdagen");
+
+        assert_eq!(data.budget(a), None);
+        data.set_budget(a, Some(150));
+        assert_eq!(data.budget(a), Some((Duration::hours(2), Duration::minutes(150))));
+        data.set_budget(a, Some(0));
+        assert_eq!(data.budget(a), None, "0 fjerner budgettet");
     }
 
     #[test]

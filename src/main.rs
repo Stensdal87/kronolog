@@ -24,6 +24,7 @@ mod hotkeys;
 mod i18n;
 mod idle;
 mod mic;
+mod project_list;
 mod shortcuts;
 mod single_instance;
 mod tray;

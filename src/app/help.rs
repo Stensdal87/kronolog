@@ -75,8 +75,11 @@ impl Topic {
 }
 
 /// "Vidste du…?": tekst (`tips.<key>`) og emnet, der forklarer mere.
-const TIPS: [(&str, Topic); 12] = [
+const TIPS: [(&str, Topic); 15] = [
     ("week", Topic::History),
+    ("favorites", Topic::Lists),
+    ("goal", Topic::Start),
+    ("share", Topic::Lists),
     ("split", Topic::History),
     ("move", Topic::Switch),
     ("item", Topic::Lists),

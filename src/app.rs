@@ -34,6 +34,8 @@ use crate::data::{NOTE_PHONE, BilledState, Scope, format_length, note_label, Act
 const HEARTBEAT: StdDuration = StdDuration::from_secs(30);
 
 const ACCENT: Color32 = Color32::from_rgb(70, 160, 230);
+/// Dagsmålets ring og tekst.
+const GOAL_COLOR: Color32 = Color32::from_rgb(80, 170, 100);
 
 /// Om telefonen blev taget automatisk (#27).
 #[derive(Clone, Copy, PartialEq)]
@@ -154,6 +156,10 @@ pub struct TimeSnapperApp {
     forgot_prompt: Option<DateTime<Local>>,
     /// Ingen påmindelse før da ("Om en time" / "Ikke i dag").
     forgot_snoozed_until: Option<DateTime<Local>>,
+    /// "Timebudget…": projektet og budgettet i timer, mens det rettes.
+    budget_dialog: Option<(Id, f32)>,
+    /// Besked efter eksport/import af kunde- og projektlisten.
+    list_message: Option<String>,
     /// Dagen, hvor den daglige sikkerhedskopi er lavet.
     backed_up_on: Option<NaiveDate>,
     /// "Gendan sikkerhedskopi?", når en kopi er valgt.
@@ -277,6 +283,8 @@ impl TimeSnapperApp {
             new_exercise: None,
             help: None,
             backed_up_on: None,
+            budget_dialog: None,
+            list_message: None,
             present_since: None,
             forgot_prompt: None,
             forgot_snoozed_until: None,
@@ -585,9 +593,40 @@ impl TimeSnapperApp {
         let mut delete = None;
         let mut rename = None;
         let mut show_entries = None;
+        let mut toggle_favorite = None;
+        let mut edit_budget = None;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             let mut any_match = false;
+            // ⭐ Favoritter øverst (ikke under søgning, hvor listen viser træffere).
+            let favorites = self.data.favorites();
+            if !searching && !favorites.is_empty() {
+                egui::CollapsingHeader::new(RichText::new(tr!("favorites.title")).strong())
+                    .id_salt("favorites")
+                    .default_open(true)
+                    .open(force_open)
+                    .show(ui, |ui| {
+                        for project in favorites {
+                            let is_active = active_project == Some(project.id);
+                            let name = self.data.project_label(project.id);
+                            let label = if is_active {
+                                RichText::new(format!("▶ {name}")).color(ACCENT).strong()
+                            } else {
+                                RichText::new(name)
+                            };
+                            let response = ui.selectable_label(is_active, label);
+                            if response.clicked() && !is_active {
+                                start_project = Some(project.id);
+                            }
+                            response.context_menu(|ui| {
+                                if ui.button(tr!("favorites.remove")).clicked() {
+                                    toggle_favorite = Some(project.id);
+                                    ui.close();
+                                }
+                            });
+                        }
+                    });
+            }
             for customer in self.data.visible_customers() {
                 let Some(projects) = matching_projects(&self.data, customer, &self.search) else {
                     continue;
@@ -617,6 +656,15 @@ impl TimeSnapperApp {
                                         show_entries = Some(Scope::Project(project.id));
                                         ui.close();
                                     }
+                                    let favorite = egui::Button::selectable(project.favorite, tr!("favorites.toggle"));
+                                    if ui.add(favorite).clicked() {
+                                        toggle_favorite = Some(project.id);
+                                        ui.close();
+                                    }
+                                    if ui.button(tr!("budget.menu")).clicked() {
+                                        edit_budget = Some(project.id);
+                                        ui.close();
+                                    }
                                     ui.separator();
                                     if ui.button(tr!("list.rename")).clicked() {
                                         rename = Some((Item::Project(project.id), project.name.clone()));
@@ -630,9 +678,23 @@ impl TimeSnapperApp {
                                         ui.close();
                                     }
                                 });
-                                if let Some(d) = totals.get(&project.id) {
+                                let budget = self.data.budget(project.id);
+                                if totals.contains_key(&project.id) || budget.is_some() {
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        ui.label(RichText::new(format_duration(*d)).weak().monospace());
+                                        if let Some(d) = totals.get(&project.id) {
+                                            ui.label(RichText::new(format_duration(*d)).weak().monospace());
+                                        }
+                                        // Timebudget: brugt i procent, gul fra 90 % og rød over.
+                                        if let Some((used, budget)) = budget {
+                                            let percent = budget_percent(used, budget);
+                                            let color = budget_color(ui, percent);
+                                            ui.label(RichText::new(format!("{percent} %")).small().color(color)).on_hover_text(tr!(
+                                                "budget.used",
+                                                used = format_hours_minutes(used),
+                                                budget = format_hours_minutes(budget),
+                                                percent = percent
+                                            ));
+                                        }
                                     });
                                 }
                             });
@@ -717,6 +779,14 @@ impl TimeSnapperApp {
             self.data.add_project(customer_id, &name);
             self.save();
         }
+        if let Some(id) = toggle_favorite {
+            self.data.toggle_favorite(id);
+            self.save();
+        }
+        if let Some(id) = edit_budget {
+            let hours = self.data.project(id).and_then(|p| p.budget_minutes).map_or(0.0, |m| m as f32 / 60.0);
+            self.budget_dialog = Some((id, hours));
+        }
         if let Some(id) = start_project {
             self.data.start(id);
             self.save();
@@ -750,6 +820,13 @@ impl TimeSnapperApp {
         ];
         if let Some(rounded) = rounded {
             panel_texts.push((tr!("day.rounded", time = format_hours_minutes(rounded)), small.clone()));
+        }
+        let goal_text = self.data.settings.goal_for(today).map(|goal| {
+            let work = self.data.work_day_total(today);
+            tr!("goal.progress", goal = format_hours_minutes(goal), percent = budget_percent(work, goal))
+        });
+        if let Some(text) = &goal_text {
+            panel_texts.push((text.clone(), small.clone()));
         }
         if let Some(total) = project_total {
             panel_texts.push((tr!("day.project_total"), small.clone()));
@@ -808,6 +885,22 @@ impl TimeSnapperApp {
             painter.circle_filled(point_at((secs % 60.0) / 60.0), ring_width / 2.0 - 2.0, Color32::WHITE);
         }
 
+        // Dagsmålet: en tynd grøn ring inden for uret, der fyldes i løbet af dagen.
+        if let Some(goal) = self.data.settings.goal_for(today) {
+            let work_today = self.data.work_day_total(today);
+            let goal = goal.num_minutes();
+            let goal_radius = radius - ring_width / 2.0 - 5.0;
+            let fraction = (work_today.num_minutes() as f32 / goal as f32).clamp(0.0, 1.0);
+            painter.circle_stroke(center, goal_radius, Stroke::new(3.0, track));
+            if fraction > 0.0 {
+                let steps = (fraction * 100.0).ceil().max(1.0) as usize;
+                let arc: Vec<Pos2> = (0..=steps)
+                    .map(|i| center + Vec2::angled(fraction * TAU * i as f32 / steps as f32 - TAU / 4.0) * goal_radius)
+                    .collect();
+                painter.add(egui::Shape::line(arc, Stroke::new(3.0, GOAL_COLOR)));
+            }
+        }
+
         let text_color = ui.visuals().strong_text_color();
         let current_pos = if today_on_project.is_some() { center - Vec2::new(0.0, 8.0) } else { center };
         painter.text(
@@ -839,7 +932,10 @@ impl TimeSnapperApp {
             );
             panel.set_opacity(t);
             panel.set_clip_rect(panel_rect.expand(2.0));
-            let lines_height = 30.0 + if rounded.is_some() { 16.0 } else { 0.0 } + if project_total.is_some() { 42.0 } else { 0.0 };
+            let lines_height = 30.0
+                + if rounded.is_some() { 16.0 } else { 0.0 }
+                + if goal_text.is_some() { 16.0 } else { 0.0 }
+                + if project_total.is_some() { 42.0 } else { 0.0 };
             panel.add_space(((size - lines_height) / 2.0).max(0.0));
             panel.label(RichText::new(tr!("day.today")).weak().small());
             panel.label(RichText::new(format_duration(day_total)).monospace().size(16.0).strong());
@@ -847,6 +943,9 @@ impl TimeSnapperApp {
                 panel
                     .label(RichText::new(tr!("day.rounded", time = format_hours_minutes(rounded))).small().color(panel.visuals().warn_fg_color))
                     .on_hover_text(tr!("day.rounded_hint"));
+            }
+            if let Some(text) = &goal_text {
+                panel.label(RichText::new(text).small().color(GOAL_COLOR)).on_hover_text(tr!("goal.hint"));
             }
             if let Some(total) = project_total {
                 panel.add_space(8.0);
@@ -884,6 +983,21 @@ impl TimeSnapperApp {
                     self.picker = Some(ProjectPicker::moving());
                 }
             });
+            // Nærmer den kørende tid sig projektets timebudget, så sig det her.
+            if let Some((used, budget)) = self.data.active.as_ref().and_then(|a| a.project_id).and_then(|id| self.data.budget(id))
+            {
+                let percent = budget_percent(used, budget);
+                if percent >= 90 {
+                    let color = budget_color(ui, percent);
+                    let text = tr!(
+                        "budget.warning",
+                        used = format_hours_minutes(used),
+                        budget = format_hours_minutes(budget),
+                        percent = percent
+                    );
+                    ui.vertical_centered(|ui| ui.label(RichText::new(text).small().color(color)));
+                }
+            }
         }
     }
 
@@ -1401,6 +1515,7 @@ impl eframe::App for TimeSnapperApp {
         self.away_dialog(&ctx);
         self.sleep_dialog(&ctx);
         self.forgot_dialog(&ctx);
+        self.budget_window(&ctx);
         self.break_dialog(&ctx);
         self.breathing_window(&ctx);
         self.new_exercise_dialog(&ctx);
@@ -1792,6 +1907,7 @@ impl TimeSnapperApp {
             || self.new_exercise.is_some()
             || self.restore_prompt.is_some()
             || self.forgot_prompt.is_some()
+            || self.budget_dialog.is_some()
     }
 
     /// Udfører en handling fra en genvejstast. `global` er når genvejen blev
@@ -2092,6 +2208,79 @@ impl TimeSnapperApp {
     /// af vinduet.
     pub(super) fn blink_on(&self) -> bool {
         !self.data.settings.blink || self.data.active.as_ref().is_none_or(|a| a.elapsed().num_seconds() % 2 == 0)
+    }
+
+    /// Gemmer kunde- og projektlisten som CSV, så en kollega kan indlæse den.
+    fn export_project_list(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title(tr!("share.export_title"))
+            .set_file_name(tr!("share.file_name"))
+            .add_filter("CSV", &["csv"]);
+        if let Some(dir) = directories::UserDirs::new().and_then(|d| d.download_dir().map(PathBuf::from)) {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(path) = dialog.save_file() else { return };
+        let list = self.data.project_list();
+        self.list_message = Some(match std::fs::write(&path, crate::project_list::to_csv(&list)) {
+            Ok(()) => tr!("share.exported", count = list.len(), path = path.display()),
+            Err(e) => tr!("share.err", error = e),
+        });
+    }
+
+    /// Indlæser en delt liste og tilføjer de kunder og projekter, der mangler.
+    fn import_project_list(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(tr!("share.import_title"))
+            .add_filter("CSV", &["csv", "txt"])
+            .pick_file()
+        else {
+            return;
+        };
+        self.list_message = Some(match std::fs::read(&path) {
+            Ok(bytes) => {
+                let list = crate::project_list::parse_csv(&String::from_utf8_lossy(&bytes));
+                let (customers, projects) = self.data.import_project_list(&list);
+                self.save();
+                tr!("share.imported", customers = customers, projects = projects)
+            }
+            Err(e) => tr!("share.err", error = e),
+        });
+    }
+
+    /// "Timebudget…" for et projekt: antal timer (0 fjerner budgettet).
+    fn budget_window(&mut self, ctx: &egui::Context) {
+        let Some((project_id, mut hours)) = self.budget_dialog else { return };
+        let (mut save, mut close) = (false, false);
+        let used = self.data.project_total(project_id);
+        let modal = egui::Modal::new(egui::Id::unique("budget_dialog")).show(ctx, |ui| {
+            ui.set_width(260.0);
+            ui.heading(tr!("budget.title"));
+            ui.label(RichText::new(self.data.project_label(project_id)).strong());
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(tr!("budget.hours"));
+                ui.add(egui::DragValue::new(&mut hours).range(0.0..=10000.0).speed(0.5).fixed_decimals(1).suffix(" t"));
+            });
+            ui.label(RichText::new(tr!("budget.used_so_far", used = format_hours_minutes(used))).weak().small());
+            ui.label(RichText::new(tr!("budget.hint")).weak().small());
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                save |= ui.button(tr!("common.save")).clicked();
+                close |= ui.button(tr!("common.cancel")).clicked();
+            });
+            save |= ui.input(|i| i.key_pressed(egui::Key::Enter));
+        });
+        close |= modal.should_close();
+        if save {
+            let minutes = (hours * 60.0).round() as u32;
+            self.data.set_budget(project_id, Some(minutes));
+            self.save();
+            self.budget_dialog = None;
+        } else if close {
+            self.budget_dialog = None;
+        } else {
+            self.budget_dialog = Some((project_id, hours));
+        }
     }
 
     /// "Gendan sikkerhedskopien fra …?" Den nuværende fil gemmes først, så
@@ -2412,7 +2601,8 @@ impl TimeSnapperApp {
         ui.add_enabled_ui(settings.auto_call, |ui| {
             ui.horizontal(|ui| {
                 ui.label(tr!("settings.call_apps"));
-                ui.add(egui::TextEdit::singleline(&mut settings.call_apps).desired_width((ui.available_width() - 36.0).max(40.0)));
+                // Tekstfeltet lægger sin egen margen oveni; ellers blev rækken (og hele panelet) for bred.
+                ui.add(egui::TextEdit::singleline(&mut settings.call_apps).desired_width((ui.available_width() - 50.0).max(40.0)));
                 // Vælg blandt programmer, der har brugt mikrofonen, så navnet er rigtigt (#28).
                 ui.menu_button("+", |ui| {
                     let known = self.mic.known_apps();
@@ -2455,31 +2645,85 @@ impl TimeSnapperApp {
             self.save();
         }
 
-        // Opdateringer (#26).
+        // Dagsmål pr. ugedag: den grønne ring i uret.
+        settings_section(ui, tr!("goal.title"));
+        if ui.checkbox(&mut self.data.settings.daily_goal, tr!("goal.enable")).changed() {
+            self.save();
+        }
+        if self.data.settings.daily_goal {
+            let day_names = tr!("week.days");
+            let day_names: Vec<&str> = day_names.split(',').collect();
+            let mut goals = self.data.settings.goal_minutes;
+            let mut changed = false;
+            // Ma–To på én række og Fr–Sø på den næste, så det passer i det smalle panel
+            // (bredere indhold ville gøre hele panelet bredere og klippe andre tekster).
+            ui.spacing_mut().interact_size.x = 38.0;
+            for days in [0..4, 4..7] {
+                egui::Grid::new(("goal_days", days.start)).spacing([6.0, 2.0]).min_col_width(38.0).show(ui, |ui| {
+                    for day in days.clone() {
+                        ui.label(RichText::new(day_names.get(day).copied().unwrap_or("")).small().weak());
+                    }
+                    ui.end_row();
+                    for day in days.clone() {
+                        let drag = egui::DragValue::new(&mut goals[day])
+                            .range(0..=16 * 60)
+                            .speed(5.0)
+                            .custom_formatter(|m, _| format!("{}:{:02}", m as u32 / 60, m as u32 % 60))
+                            .custom_parser(|text| {
+                                let (h, m) = text.trim().split_once([':', '.']).unwrap_or((text.trim(), "0"));
+                                Some(h.parse::<f64>().ok()? * 60.0 + m.parse::<f64>().ok()?)
+                            });
+                        changed |= ui.add(drag).changed();
+                    }
+                    ui.end_row();
+                });
+            }
+            ui.label(RichText::new(tr!("goal.days_hint")).weak().small());
+            if changed {
+                self.data.settings.goal_minutes = goals;
+                self.save();
+            }
+        }
+
+        // Del kunde- og projektlisten med kolleger.
+        settings_section(ui, tr!("share.title"));
+        ui.label(RichText::new(tr!("share.hint")).weak().small());
+        ui.horizontal(|ui| {
+            if ui.button(tr!("share.export")).clicked() {
+                self.export_project_list();
+            }
+            if ui.button(tr!("share.import")).clicked() {
+                self.import_project_list();
+            }
+        });
+        if let Some(message) = &self.list_message {
+            ui.label(RichText::new(message).small());
+        }
+
         // Daglige sikkerhedskopier.
         settings_section(ui, tr!("backup.title"));
         ui.label(RichText::new(tr!("backup.hint", days = crate::backup::KEEP)).weak().small());
         let backups = crate::backup::list(&self.path);
-        ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt("restore_backup")
-                .selected_text(tr!("backup.restore"))
-                .width((ui.available_width() - 70.0).max(60.0))
-                .show_ui(ui, |ui| {
-                    if backups.is_empty() {
-                        ui.label(RichText::new(tr!("backup.none")).weak());
+        // Hver for sig: på én række blev de bredere end panelet, så alt indhold
+        // blev bredere og tekster i panelet blev klippet.
+        egui::ComboBox::from_id_salt("restore_backup")
+            .selected_text(tr!("backup.restore"))
+            .width((ui.available_width() - 8.0).max(60.0))
+            .show_ui(ui, |ui| {
+                if backups.is_empty() {
+                    ui.label(RichText::new(tr!("backup.none")).weak());
+                }
+                for backup in &backups {
+                    if ui.button(backup.date.format("%d-%m-%Y").to_string()).clicked() {
+                        self.restore_prompt = Some(backup.clone());
                     }
-                    for backup in &backups {
-                        if ui.button(backup.date.format("%d-%m-%Y").to_string()).clicked() {
-                            self.restore_prompt = Some(backup.clone());
-                        }
-                    }
-                });
-            if ui.button(tr!("backup.open_folder")).clicked() {
-                let folder = crate::backup::folder(&self.path);
-                let _ = std::fs::create_dir_all(&folder);
-                crate::updater::open_page(&folder.to_string_lossy());
-            }
-        });
+                }
+            });
+        if ui.button(tr!("backup.open_folder")).clicked() {
+            let folder = crate::backup::folder(&self.path);
+            let _ = std::fs::create_dir_all(&folder);
+            crate::updater::open_page(&folder.to_string_lossy());
+        }
 
         settings_section(ui, tr!("settings.help"));
         if ui.button(format!("? {}", tr!("help.open"))).clicked() {
@@ -2750,6 +2994,20 @@ fn matching_projects<'a>(data: &'a Data, customer: &Customer, query: &str) -> Op
 }
 
 /// Forkorter en tekst til højst `max` tegn med "…" til sidst.
+/// Brugt tid i procent af budgettet.
+fn budget_percent(used: Duration, budget: Duration) -> i64 {
+    (used.num_minutes() * 100).checked_div(budget.num_minutes()).unwrap_or(0)
+}
+
+/// Svag under 90 %, gul fra 90 % og rød over budgettet.
+fn budget_color(ui: &egui::Ui, percent: i64) -> Color32 {
+    match percent {
+        ..90 => ui.visuals().weak_text_color(),
+        90..=100 => ui.visuals().warn_fg_color,
+        _ => ui.visuals().error_fg_color,
+    }
+}
+
 fn shorten(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_owned();

@@ -447,6 +447,20 @@ impl TimeSnapperApp {
 
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+                    // Favoritterne øverst, når der ikke søges.
+                    let favorites = self.data.favorites();
+                    if picker.search.trim().is_empty() && !favorites.is_empty() {
+                        ui.label(RichText::new(tr!("favorites.title")).strong());
+                        for project in favorites {
+                            let is_active = active_project == Some(project.id);
+                            let name = self.data.project_label(project.id);
+                            let text = if is_active { format!("   ▶ {name}") } else { format!("   {name}") };
+                            if ui.selectable_label(is_active, text).clicked() && !is_active {
+                                chosen = Some(project.id);
+                            }
+                        }
+                        ui.add_space(4.0);
+                    }
                     for customer in self.data.visible_customers() {
                         let Some(projects) = matching_projects(&self.data, customer, &picker.search) else {
                             continue;

@@ -1188,8 +1188,8 @@ help.start:
   da: "Kom i gang"
   en: "Getting started"
 help.start_body:
-  da: "• Klik på et projekt i listen for at starte tiden på det. Den kørende tid står øverst under ⏱ Timer.\n• Mangler kunden eller projektet, så skriv navnet i \"Ny kunde…\" eller \"Nyt projekt…\" og tryk Enter.\n• Starter du et andet projekt, stopper det forrige af sig selv. ⏹ Stop stopper tiden helt.\n• Skriv en note til den kørende tid i 📝-feltet. Den kommer med i historikken og eksporten."
-  en: "• Click a project in the list to start time on it. The running time is shown at the top of ⏱ Timer.\n• If the customer or project is missing, type the name in \"New customer…\" or \"New project…\" and press Enter.\n• Starting another project stops the previous one. ⏹ Stop stops the time completely.\n• Write a note for the running time in the 📝 field. It is included in the history and the export."
+  da: "• Klik på et projekt i listen for at starte tiden på det. Den kørende tid står øverst under ⏱ Timer.\n• Mangler kunden eller projektet, så skriv navnet i \"Ny kunde…\" eller \"Nyt projekt…\" og tryk Enter.\n• Starter du et andet projekt, stopper det forrige af sig selv. ⏹ Stop stopper tiden helt.\n• Skriv en note til den kørende tid i 📝-feltet. Den kommer med i historikken og eksporten.\n• Under ☰ → Dagsmål kan du sætte et antal timer pr. dag. En grøn ring i uret viser, hvor langt du er (pauser tæller ikke med)."
+  en: "• Click a project in the list to start time on it. The running time is shown at the top of ⏱ Timer.\n• If the customer or project is missing, type the name in \"New customer…\" or \"New project…\" and press Enter.\n• Starting another project stops the previous one. ⏹ Stop stops the time completely.\n• Write a note for the running time in the 📝 field. It is included in the history and the export.\n• Under ☰ → Daily goal you can set a number of hours per day. A green ring in the clock shows how far you are (breaks don't count)."
 help.switch:
   da: "Skift eller ret den kørende tid"
   en: "Switch or correct the running time"
@@ -1218,8 +1218,8 @@ help.lists:
   da: "Kunder og projekter"
   en: "Customers and projects"
 help.lists_body:
-  da: "• Højreklik på en kunde eller et projekt for at omdøbe eller slette den.\n• 📋 Vis registreringer… i samme menu viser al tid for kunden eller projektet pr. dag, uge, måned eller altid. Der kan du også rette og eksportere.\n• A–Å / Senest skifter rækkefølgen. Søgefeltet (Ctrl+F) finder kunder og projekter.\n• Under ☰ → Nye kunder kan du give alle nye kunder de samme projekter.\n• Slettede projekter forsvinder fra listen, men tiden bliver i historikken."
-  en: "• Right-click a customer or project to rename or delete it.\n• 📋 Show entries… in the same menu shows all time for the customer or project per day, week, month or all time. You can edit and export there too.\n• A–Z / Recent changes the order. The search field (Ctrl+F) finds customers and projects.\n• Under ☰ → New customers you can give all new customers the same projects.\n• Deleted projects disappear from the list, but their time stays in the history."
+  da: "• Højreklik på en kunde eller et projekt for at omdøbe eller slette den.\n• 📋 Vis registreringer… i samme menu viser al tid for kunden eller projektet pr. dag, uge, måned eller altid. Der kan du også rette og eksportere.\n• A–Å / Senest skifter rækkefølgen. Søgefeltet (Ctrl+F) finder kunder og projekter.\n• Under ☰ → Nye kunder kan du give alle nye kunder de samme projekter.\n• Slettede projekter forsvinder fra listen, men tiden bliver i historikken.\n• ⭐ Favorit i højrekliksmenuen sætter projektet øverst i listen og i 🔀-vælgeren.\n• ⏳ Timebudget… giver projektet et antal timer. Listen viser, hvor mange procent der er brugt, og under uret kommer en advarsel fra 90 %.\n• Under ☰ → Del kunder og projekter gemmer du listen som en fil, som en kollega kan indlæse."
+  en: "• Right-click a customer or project to rename or delete it.\n• 📋 Show entries… in the same menu shows all time for the customer or project per day, week, month or all time. You can edit and export there too.\n• A–Z / Recent changes the order. The search field (Ctrl+F) finds customers and projects.\n• Under ☰ → New customers you can give all new customers the same projects.\n• Deleted projects disappear from the list, but their time stays in the history.\n• ⭐ Favourite in the right-click menu puts the project at the top of the list and in the 🔀 picker.\n• ⏳ Hour budget… gives the project a number of hours. The list shows the percentage used, and a warning appears under the clock from 90 %.\n• Under ☰ → Share customers and projects you save the list as a file a colleague can load."
 help.export:
   da: "Eksport til Excel og CSV"
   en: "Export to Excel and CSV"
@@ -1406,3 +1406,87 @@ history.all_short:
 tips.week:
   da: "Uge under Historik viser hele ugen som et timeregnskab, klar til at overføre."
   en: "Week under History shows the whole week as a timesheet, ready to transfer."
+favorites.title:
+  da: "⭐ Favoritter"
+  en: "⭐ Favourites"
+favorites.toggle:
+  da: "⭐ Favorit"
+  en: "⭐ Favourite"
+favorites.remove:
+  da: "Fjern fra favoritter"
+  en: "Remove from favourites"
+budget.menu:
+  da: "⏳ Timebudget…"
+  en: "⏳ Hour budget…"
+budget.used:
+  da: "Brugt %{used} af %{budget} (%{percent} %)"
+  en: "Used %{used} of %{budget} (%{percent} %)"
+budget.title:
+  da: "⏳ Timebudget"
+  en: "⏳ Hour budget"
+budget.hours:
+  da: "Budget:"
+  en: "Budget:"
+budget.used_so_far:
+  da: "Brugt indtil nu: %{used}"
+  en: "Used so far: %{used}"
+budget.hint:
+  da: "Al tid på projektet tæller med. Fra 90 % vises procenten med gult, over budgettet med rødt. 0 fjerner budgettet."
+  en: "All time on the project counts. From 90 % the percentage is shown in yellow, above the budget in red. 0 removes the budget."
+budget.warning:
+  da: "⚠ %{used} af %{budget} brugt (%{percent} %)"
+  en: "⚠ %{used} of %{budget} used (%{percent} %)"
+goal.progress:
+  da: "Mål %{goal} · %{percent} %"
+  en: "Goal %{goal} · %{percent} %"
+goal.hint:
+  da: "Dagens arbejdstid uden pauser i forhold til dagsmålet (den grønne ring i uret)."
+  en: "Today's working time without breaks compared to the daily goal (the green ring in the clock)."
+goal.title:
+  da: "Dagsmål"
+  en: "Daily goal"
+goal.enable:
+  da: "Vis et dagsmål som en grøn ring i uret"
+  en: "Show a daily goal as a green ring in the clock"
+share.title:
+  da: "Del kunder og projekter"
+  en: "Share customers and projects"
+share.hint:
+  da: "Gem din liste som en fil, som en kollega kan indlæse. Indlæsning tilføjer kun det, der mangler. Filen kan også laves i Excel (Kunde;Projekt)."
+  en: "Save your list as a file a colleague can load. Loading only adds what is missing. The file can also be made in Excel (Customer;Project)."
+share.export:
+  da: "Eksportér…"
+  en: "Export…"
+share.import:
+  da: "Importér…"
+  en: "Import…"
+share.export_title:
+  da: "Gem kunder og projekter"
+  en: "Save customers and projects"
+share.import_title:
+  da: "Indlæs kunder og projekter"
+  en: "Load customers and projects"
+share.file_name:
+  da: "kunder-og-projekter.csv"
+  en: "customers-and-projects.csv"
+share.exported:
+  da: "✔ %{count} linjer gemt i %{path}"
+  en: "✔ %{count} lines saved to %{path}"
+share.imported:
+  da: "✔ Tilføjet %{customers} kunder og %{projects} projekter."
+  en: "✔ Added %{customers} customers and %{projects} projects."
+share.err:
+  da: "Det lykkedes ikke: %{error}"
+  en: "That did not work: %{error}"
+tips.favorites:
+  da: "Højreklik på et projekt og vælg ⭐ Favorit, så står det øverst i listen."
+  en: "Right-click a project and choose ⭐ Favourite to put it at the top of the list."
+tips.goal:
+  da: "Under ☰ → Dagsmål kan uret vise, hvor langt du er med dagens timer."
+  en: "Under ☰ → Daily goal the clock can show how far you are with today's hours."
+tips.share:
+  da: "Ny kollega? Del din kunde- og projektliste under ☰ → Del kunder og projekter."
+  en: "New colleague? Share your customer and project list under ☰ → Share customers and projects."
+goal.days_hint:
+  da: "Timer pr. ugedag. 0:00 betyder intet mål den dag."
+  en: "Hours per weekday. 0:00 means no goal that day."
