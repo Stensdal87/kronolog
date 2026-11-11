@@ -115,7 +115,7 @@ impl Help {
     }
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Åbner hjælpen, evt. ved et bestemt emne. Åbner den allerede, rulles der til emnet.
     pub(super) fn open_help(&mut self, topic: Option<Topic>) {
         match &mut self.help {

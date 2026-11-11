@@ -10,7 +10,7 @@ pub(super) struct ShortcutsDialog {
     message: Option<String>,
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     pub(super) fn shortcuts_dialog(&mut self, ctx: &egui::Context) {
         let Some(mut dialog) = self.shortcuts_dialog.take() else { return };
         let globals_supported = self.hotkeys.is_some();

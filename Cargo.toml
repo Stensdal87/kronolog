@@ -1,10 +1,10 @@
 [package]
-name = "time_snapper"
+name = "kronolog"
 version = "0.14.0"
 edition = "2024"
 description = "Lille tidsregistreringsprogram til kunder og projekter"
 license = "MIT"
-repository = "https://github.com/Stensdal87/time-snapper"
+repository = "https://github.com/Stensdal87/kronolog"
 
 [dependencies]
 chrono = { version = "0.4.45", features = ["serde"] }

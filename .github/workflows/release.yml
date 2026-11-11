@@ -30,9 +30,12 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer\time-snapper.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$version installer\kronolog.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item target\release\time_snapper.exe "dist\TimeSnapper-portable-$version.exe"
+          Copy-Item target\release\kronolog.exe "dist\KronoLog-portable-$version.exe"
+          # Overgang fra navnet Time Snapper: versioner før 1.0 leder efter
+          # TimeSnapper-Setup-*.exe, når de opdaterer sig selv.
+          Copy-Item "dist\KronoLog-Setup-$version.exe" "dist\TimeSnapper-Setup-$version.exe"
           Get-ChildItem dist
 
       - uses: actions/upload-artifact@v7
@@ -57,10 +60,10 @@ jobs:
       - name: Pak
         run: |
           version="${GITHUB_REF_NAME#v}"
-          name="TimeSnapper-$version-linux-x86_64"
+          name="KronoLog-$version-linux-x86_64"
           mkdir -p "dist/$name"
-          install -m755 target/release/time_snapper "dist/$name/time-snapper"
-          install -m644 assets/icon.png "dist/$name/time-snapper.png"
+          install -m755 target/release/kronolog "dist/$name/kronolog"
+          install -m644 assets/icon.png "dist/$name/kronolog.png"
           install -m755 installer/linux/install.sh installer/linux/uninstall.sh "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           ls -l dist
@@ -85,21 +88,25 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           cat > notes.md <<EOF
+          Time Snapper hedder nu **KronoLog**. Opdaterer du fra Time Snapper, flytter KronoLog selv dine data, indstillinger og automatisk start over ved første start. Nemmest er knappen **Opdatér nu** i Time Snapper. Installerer du i stedet selv, så luk først Time Snapper helt (højreklik på ikonet i systembakken → **Afslut**).
+
           ## Windows
 
-          Hent **TimeSnapper-Setup-$version.exe** og kør den. Den installerer kun for din bruger, så der kræves ikke administratorrettigheder.
+          Hent **KronoLog-Setup-$version.exe** og kør den. Den installerer kun for din bruger, så der kræves ikke administratorrettigheder.
 
-          **TimeSnapper-portable-$version.exe** kan køres direkte uden installation.
+          **KronoLog-portable-$version.exe** kan køres direkte uden installation.
+
+          *TimeSnapper-Setup-$version.exe* er den samme installer under det gamle navn, så ældre versioner kan opdatere sig selv. Den behøver du ikke hente.
 
           Programmet er ikke kodesigneret, så Windows SmartScreen kan advare første gang: vælg **Flere oplysninger → Kør alligevel**.
 
           ## Linux
 
-          Hent **TimeSnapper-$version-linux-x86_64.tar.gz**, pak den ud og kør installationsscriptet:
+          Hent **KronoLog-$version-linux-x86_64.tar.gz**, pak den ud og kør installationsscriptet:
 
           \`\`\`sh
-          tar xzf TimeSnapper-$version-linux-x86_64.tar.gz
-          cd TimeSnapper-$version-linux-x86_64
+          tar xzf KronoLog-$version-linux-x86_64.tar.gz
+          cd KronoLog-$version-linux-x86_64
           ./install.sh
           \`\`\`
 
@@ -107,6 +114,6 @@ jobs:
 
           ## Data
 
-          Data gemmes i \`%APPDATA%\\TimeSnapper\\\` på Windows og \`~/.local/share/timesnapper/\` på Linux og bliver liggende ved opdatering og afinstallation.
+          Data gemmes i \`%APPDATA%\\KronoLog\\\` på Windows og \`~/.local/share/kronolog/\` på Linux og bliver liggende ved opdatering og afinstallation.
           EOF
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Time Snapper $version" --notes-file notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "KronoLog $version" --notes-file notes.md

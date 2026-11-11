@@ -35,7 +35,7 @@ pub(super) fn monday_of(date: NaiveDate) -> NaiveDate {
     date - Duration::days(date.weekday().num_days_from_monday() as i64)
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     pub(super) fn week_view(&mut self, ui: &mut egui::Ui) {
         let monday = monday_of(self.history_date);
         let rows = week_rows(&self.data, monday);

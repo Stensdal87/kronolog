@@ -82,7 +82,7 @@ const NORMAL_MIN_SIZE: Vec2 = Vec2::new(260.0, 300.0);
 /// Smallere end dette kan det fulde vindue ikke tegnes; se `ui`.
 pub(super) const NORMAL_MIN_WIDTH: f32 = 200.0;
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Hvilken visning der skal bruges lige nu. Dialoger kræver plads, så
     /// vinduet folder sig midlertidigt helt ud, mens de er åbne.
     pub(super) fn wanted_layout(&self) -> WindowLayout {

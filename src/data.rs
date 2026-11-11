@@ -380,10 +380,10 @@ pub struct Rounded {
 }
 
 impl Data {
-    /// Standardplacering: ~/.local/share/timesnapper/data.json på Linux,
-    /// %APPDATA%\TimeSnapper\data\data.json på Windows.
+    /// Standardplacering: ~/.local/share/kronolog/data.json på Linux,
+    /// %APPDATA%\KronoLog\data\data.json på Windows.
     pub fn default_path() -> PathBuf {
-        Self::path_for("TimeSnapper")
+        Self::path_for("KronoLog")
     }
 
     /// Datafilens placering for et givet programnavn.

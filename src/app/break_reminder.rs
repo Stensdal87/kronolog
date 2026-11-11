@@ -102,7 +102,7 @@ enum Activity {
     Working,
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Holder øje med arbejdstiden og viser påmindelsen, når den er nået.
     pub(super) fn update_break_reminder(&mut self, ctx: &egui::Context) {
         let activity = match &self.data.active {

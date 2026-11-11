@@ -1,6 +1,6 @@
 //! Genvejstaster: handlinger, tastekombinationer og brugerens valg.
 //!
-//! Hver handling kan have en genvej i programmet (virker når Time Snapper har
+//! Hver handling kan have en genvej i programmet (virker når KronoLog har
 //! fokus) og en global genvej (virker overalt; se `hotkeys.rs`).
 
 use eframe::egui::{self, Key};

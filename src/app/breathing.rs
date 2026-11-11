@@ -237,7 +237,7 @@ impl Default for NewExercise {
     }
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Vinduet til en ny øvelse: fire tal og et navn, med figuren som forhåndsvisning.
     pub(super) fn new_exercise_dialog(&mut self, ctx: &egui::Context) {
         let Some(new) = &mut self.new_exercise else { return };

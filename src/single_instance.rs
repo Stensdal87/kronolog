@@ -1,4 +1,4 @@
-//! Kun én kørende Time Snapper ad gangen (issue #11).
+//! Kun én kørende KronoLog ad gangen (issue #11).
 //!
 //! Den første kopi låser `instance.lock` ved siden af datafilen, så længe den
 //! kører (styresystemet slipper låsen igen, også efter et nedbrud). Den lytter

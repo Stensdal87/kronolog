@@ -2049,6 +2049,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "kronolog"
+version = "0.14.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "eframe",
+ "egui",
+ "ksni",
+ "rfd",
+ "rust-i18n",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tray-icon",
+ "ureq",
+ "wayland-client",
+ "wayland-protocols",
+ "windows-sys 0.61.2",
+ "winit",
+ "winresource",
+]
+
+[[package]]
 name = "ksni"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3938,30 +3962,6 @@ dependencies = [
  "quick-error",
  "weezl",
  "zune-jpeg",
-]
-
-[[package]]
-name = "time_snapper"
-version = "0.14.0"
-dependencies = [
- "chrono",
- "directories",
- "eframe",
- "egui",
- "ksni",
- "rfd",
- "rust-i18n",
- "rust_xlsxwriter",
- "serde",
- "serde_json",
- "sys-locale",
- "tray-icon",
- "ureq",
- "wayland-client",
- "wayland-protocols",
- "windows-sys 0.61.2",
- "winit",
- "winresource",
 ]
 
 [[package]]

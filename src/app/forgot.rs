@@ -9,7 +9,7 @@ use super::*;
 /// Hvor længe der skal gå efter "Om en time".
 const SNOOZE: Duration = Duration::hours(1);
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Kaldes i `logic`. Starter påmindelsen, når man har været til stede uden
     /// kørende tid i `settings.forgot_minutes`.
     pub(super) fn handle_forgot_timer(&mut self, ctx: &egui::Context) {

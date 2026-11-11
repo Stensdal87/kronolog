@@ -1,17 +1,20 @@
-//! Start Time Snapper automatisk, når brugeren logger på.
+//! Start KronoLog automatisk, når brugeren logger på.
 //!
-//! - Windows: værdien "Time Snapper" under HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+//! - Windows: værdien "KronoLog" under HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 //!   (det samme sted som installeren bruger). Ældre installere lagde en genvej i
 //!   Start-mappen; den regnes også med og ryddes op.
 //! - Linux: en .desktop-fil i ~/.config/autostart (XDG autostart).
+//!
+//! Programmet hed tidligere "Time Snapper"; var automatisk start slået til under
+//! det navn, flyttes den over til KronoLog ved start (`migrate_old_shortcut`).
 
 /// Om programmet starter automatisk lige nu.
 pub fn is_enabled() -> bool {
     platform::is_enabled()
 }
 
-/// Erstatter genvejen i Start-mappen fra installeren i version 0.1/0.2 med den
-/// nye måde at starte automatisk på (kun Windows; gør intet ellers).
+/// Erstatter genvejen i Start-mappen fra installeren i version 0.1/0.2 og
+/// automatisk start under navnet "Time Snapper" med den nuværende.
 pub fn migrate_old_shortcut() {
     if platform::has_old_shortcut() {
         let _ = set_enabled(true);
@@ -33,7 +36,9 @@ mod platform {
     };
 
     const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    const VALUE: &str = "Time Snapper";
+    const VALUE: &str = "KronoLog";
+    /// Navnet før KronoLog.
+    const OLD_VALUE: &str = "Time Snapper";
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -46,7 +51,11 @@ mod platform {
     }
 
     fn run_value_exists() -> bool {
-        let (key, value) = (wide(RUN_KEY), wide(VALUE));
+        value_exists(VALUE)
+    }
+
+    fn value_exists(name: &str) -> bool {
+        let (key, value) = (wide(RUN_KEY), wide(name));
         // SAFETY: nul-terminerede strenge; data og størrelse må være null, når vi kun spørger om værdien findes.
         let result = unsafe {
             RegGetValueW(
@@ -63,7 +72,7 @@ mod platform {
     }
 
     pub fn has_old_shortcut() -> bool {
-        old_shortcut().is_some_and(|p| p.exists())
+        old_shortcut().is_some_and(|p| p.exists()) || value_exists(OLD_VALUE)
     }
 
     pub fn is_enabled() -> bool {
@@ -76,6 +85,12 @@ mod platform {
             && shortcut.exists()
         {
             std::fs::remove_file(&shortcut).map_err(|e| tr!("autostart.err_old_shortcut", error = e))?;
+        }
+        // Den gamle værdi under navnet "Time Snapper" fjernes altid af samme grund.
+        if value_exists(OLD_VALUE) {
+            let (key, old) = (wide(RUN_KEY), wide(OLD_VALUE));
+            // SAFETY: nul-terminerede strenge.
+            unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), old.as_ptr()) };
         }
         let (key, value) = (wide(RUN_KEY), wide(VALUE));
         let result = if enabled {
@@ -110,6 +125,11 @@ mod platform {
     use std::path::{Path, PathBuf};
 
     fn desktop_file() -> Option<PathBuf> {
+        Some(directories::BaseDirs::new()?.config_dir().join("autostart").join("kronolog.desktop"))
+    }
+
+    /// Filen fra før navneskiftet til KronoLog.
+    fn old_desktop_file() -> Option<PathBuf> {
         Some(directories::BaseDirs::new()?.config_dir().join("autostart").join("time-snapper.desktop"))
     }
 
@@ -127,14 +147,18 @@ mod platform {
     }
 
     pub fn has_old_shortcut() -> bool {
-        false
+        old_desktop_file().is_some_and(|p| p.exists())
     }
 
     pub fn is_enabled() -> bool {
-        desktop_file().is_some_and(|p| p.exists())
+        desktop_file().is_some_and(|p| p.exists()) || has_old_shortcut()
     }
 
     pub fn set_enabled(enabled: bool, exe: &Path) -> Result<(), String> {
+        // Den gamle fil fjernes altid, så programmet ikke startes to gange.
+        if let Some(old) = old_desktop_file() {
+            let _ = std::fs::remove_file(old);
+        }
         let path = desktop_file().ok_or_else(|| tr!("autostart.err_folder"))?;
         if !enabled {
             return match std::fs::remove_file(&path) {
@@ -143,7 +167,7 @@ mod platform {
             };
         }
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Time Snapper\nComment=Tidsregistrering\nExec={}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+            "[Desktop Entry]\nType=Application\nName=KronoLog\nComment=Tidsregistrering\nExec={}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
             quote_exec(exe)
         );
         if let Some(dir) = path.parent() {
@@ -159,8 +183,8 @@ mod platform {
         #[test]
         fn exec_path_is_quoted_and_escaped() {
             assert_eq!(
-                quote_exec(Path::new("/home/a/Dev/Time Tracker/time_snapper")),
-                "\"/home/a/Dev/Time Tracker/time_snapper\""
+                quote_exec(Path::new("/home/a/Dev/Time Tracker/kronolog")),
+                "\"/home/a/Dev/Time Tracker/kronolog\""
             );
             assert_eq!(quote_exec(Path::new("/x/$y\"z")), "\"/x/\\$y\\\"z\"");
         }

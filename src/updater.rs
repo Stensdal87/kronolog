@@ -2,7 +2,7 @@
 //!
 //! Søgningen kører i en tråd, så brugerfladen ikke venter på nettet. Er
 //! programmet installeret med installeren på Windows, hentes den nye
-//! `TimeSnapper-Setup-x.y.z.exe` og køres uden spørgsmål; ellers (bærbar .exe,
+//! `KronoLog-Setup-x.y.z.exe` og køres uden spørgsmål; ellers (bærbar .exe,
 //! Linux) åbnes udgivelsessiden.
 
 use std::path::PathBuf;
@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
-const LATEST_API: &str = "https://api.github.com/repos/Stensdal87/time-snapper/releases/latest";
-pub const RELEASES_PAGE: &str = "https://github.com/Stensdal87/time-snapper/releases/latest";
+const LATEST_API: &str = "https://api.github.com/repos/Stensdal87/kronolog/releases/latest";
+pub const RELEASES_PAGE: &str = "https://github.com/Stensdal87/kronolog/releases/latest";
 /// Første automatiske søgning lidt efter opstart, så den ikke forsinker den.
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(15);
 /// Derefter én gang i døgnet, hvis programmet står og kører.
@@ -134,7 +134,7 @@ impl Updater {
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
         let ctx = ctx.clone();
-        let target = std::env::temp_dir().join(format!("TimeSnapper-Setup-{}.exe", release.version));
+        let target = std::env::temp_dir().join(format!("KronoLog-Setup-{}.exe", release.version));
         self.status = Status::Downloading(release);
         std::thread::spawn(move || {
             let result = download(&url, &target).map(|()| target);
@@ -197,7 +197,7 @@ fn agent() -> ureq::Agent {
 fn fetch_latest() -> Result<Release, String> {
     let text = agent()
         .get(LATEST_API)
-        .header("User-Agent", concat!("TimeSnapper/", env!("CARGO_PKG_VERSION")))
+        .header("User-Agent", concat!("KronoLog/", env!("CARGO_PKG_VERSION")))
         .header("Accept", "application/vnd.github+json")
         .call()
         .map_err(|e| e.to_string())?
@@ -213,9 +213,9 @@ fn parse_release(json: &str) -> Result<Release, String> {
     let setup_url = value["assets"].as_array().and_then(|assets| {
         assets.iter().find_map(|a| {
             let name = a["name"].as_str()?;
-            (name.starts_with("TimeSnapper-Setup-") && name.ends_with(".exe"))
-                .then(|| a["browser_download_url"].as_str().map(str::to_owned))
-                .flatten()
+            // Det gamle navn tages også, hvis en udgivelse kun har det.
+            let setup = (name.starts_with("KronoLog-Setup-") || name.starts_with("TimeSnapper-Setup-")) && name.ends_with(".exe");
+            setup.then(|| a["browser_download_url"].as_str().map(str::to_owned)).flatten()
         })
     });
     Ok(Release {
@@ -228,7 +228,7 @@ fn parse_release(json: &str) -> Result<Release, String> {
 fn download(url: &str, target: &std::path::Path) -> Result<(), String> {
     let mut response = agent()
         .get(url)
-        .header("User-Agent", concat!("TimeSnapper/", env!("CARGO_PKG_VERSION")))
+        .header("User-Agent", concat!("KronoLog/", env!("CARGO_PKG_VERSION")))
         .call()
         .map_err(|e| e.to_string())?;
     // Først til en midlertidig fil, så en afbrudt hentning ikke køres.
@@ -261,12 +261,16 @@ mod tests {
     #[test]
     fn reads_version_and_installer_from_github_answer() {
         let json = r#"{"tag_name":"v0.11.0","html_url":"https://github.com/x/releases/tag/v0.11.0","assets":[
-            {"name":"TimeSnapper-0.11.0-linux-x86_64.tar.gz","browser_download_url":"https://x/linux.tar.gz"},
-            {"name":"TimeSnapper-portable-0.11.0.exe","browser_download_url":"https://x/portable.exe"},
-            {"name":"TimeSnapper-Setup-0.11.0.exe","browser_download_url":"https://x/setup.exe"}]}"#;
+            {"name":"KronoLog-0.11.0-linux-x86_64.tar.gz","browser_download_url":"https://x/linux.tar.gz"},
+            {"name":"KronoLog-portable-0.11.0.exe","browser_download_url":"https://x/portable.exe"},
+            {"name":"KronoLog-Setup-0.11.0.exe","browser_download_url":"https://x/setup.exe"}]}"#;
         let release = parse_release(json).unwrap();
         assert_eq!(release.version, "0.11.0");
         assert_eq!(release.page, "https://github.com/x/releases/tag/v0.11.0");
         assert_eq!(release.setup_url.as_deref(), Some("https://x/setup.exe"));
+
+        // En gammel udgivelse med det tidligere navn findes også.
+        let old = r#"{"tag_name":"v0.14.0","assets":[{"name":"TimeSnapper-Setup-0.14.0.exe","browser_download_url":"https://x/old.exe"}]}"#;
+        assert_eq!(parse_release(old).unwrap().setup_url.as_deref(), Some("https://x/old.exe"));
     }
 }

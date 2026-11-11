@@ -57,8 +57,8 @@ tray.show_window:
   da: "Vis vinduet"
   en: "Show window"
 tray.quit:
-  da: "Afslut Time Snapper"
-  en: "Quit Time Snapper"
+  da: "Afslut KronoLog"
+  en: "Quit KronoLog"
 editor.err_project:
   da: "Vælg et projekt"
   en: "Choose a project"
@@ -828,8 +828,8 @@ settings.start:
   da: "Start"
   en: "Startup"
 settings.autostart:
-  da: "Start Time Snapper, når jeg logger på"
-  en: "Start Time Snapper when I log in"
+  da: "Start KronoLog, når jeg logger på"
+  en: "Start KronoLog when I log in"
 settings.new_customers:
   da: "Nye kunder"
   en: "New customers"
@@ -1128,8 +1128,8 @@ settings.open_mic_log:
   da: "Åbn mappen med opkaldsloggen"
   en: "Open the folder with the call log"
 settings.open_mic_log_hint:
-  da: "mic-log.txt viser, hvornår mikrofonen blev brugt, og hvad Time Snapper gjorde. Send den, hvis et opkald ikke blev registreret."
-  en: "mic-log.txt shows when the microphone was used and what Time Snapper did. Send it if a call was not registered."
+  da: "mic-log.txt viser, hvornår mikrofonen blev brugt, og hvad KronoLog gjorde. Send den, hvis et opkald ikke blev registreret."
+  en: "mic-log.txt shows when the microphone was used and what KronoLog did. Send it if a call was not registered."
 split.button:
   da: "✂ Del op…"
   en: "✂ Split…"
@@ -1170,8 +1170,8 @@ picker.move_from:
   da: "Tiden fra %{time} (de sidste %{minutes} min) flyttes; tiden før bliver på det nuværende projekt."
   en: "Time from %{time} (the last %{minutes} min) is moved; the time before stays on the current project."
 help.window_title:
-  da: "Hjælp – Time Snapper"
-  en: "Help – Time Snapper"
+  da: "Hjælp – KronoLog"
+  en: "Help – KronoLog"
 help.search_hint:
   da: "🔍 Søg i hjælpen…"
   en: "🔍 Search the help…"
@@ -1200,8 +1200,8 @@ help.pause:
   da: "Pause og telefon"
   en: "Breaks and phone calls"
 help.pause_body:
-  da: "• ☕ Pause registrerer tiden på Intern tid. ▶ Fortsæt går tilbage til projektet, hvor du slap.\n• 📞 Telefon starter tid på et opkald. Når det slutter, vælger du, hvor tiden skal hen, og tiden fortsætter på det forrige projekt.\n• Under ☰ → Opkald kan Time Snapper tage telefonen af sig selv, når f.eks. Teams bruger mikrofonen."
-  en: "• ☕ Break records the time on Internal time. ▶ Resume goes back to the project where you left off.\n• 📞 Phone starts time on a call. When it ends, you choose where the time goes, and time continues on the previous project.\n• Under ☰ → Calls, Time Snapper can start a phone call by itself when e.g. Teams uses the microphone."
+  da: "• ☕ Pause registrerer tiden på Intern tid. ▶ Fortsæt går tilbage til projektet, hvor du slap.\n• 📞 Telefon starter tid på et opkald. Når det slutter, vælger du, hvor tiden skal hen, og tiden fortsætter på det forrige projekt.\n• Under ☰ → Opkald kan KronoLog tage telefonen af sig selv, når f.eks. Teams bruger mikrofonen."
+  en: "• ☕ Break records the time on Internal time. ▶ Resume goes back to the project where you left off.\n• 📞 Phone starts time on a call. When it ends, you choose where the time goes, and time continues on the previous project.\n• Under ☰ → Calls, KronoLog can start a phone call by itself when e.g. Teams uses the microphone."
 help.history:
   da: "Historik og rettelser"
   en: "History and corrections"
@@ -1242,8 +1242,8 @@ help.away:
   da: "Væk fra computeren og pauser"
   en: "Away from the computer and breaks"
 help.away_body:
-  da: "• Har du været væk, mens tiden kørte, spørger Time Snapper, om tiden skal være pause (☰ → Væk fra computeren).\n• Har computeren sovet, er tiden stoppet, mens den sov, og du kan fortsætte bagefter.\n• ☰ → Pausepåmindelse foreslår en kort pause, når du har arbejdet længe.\n• Arbejder du et stykke tid uden at tage tid, spørger Time Snapper \"Glemt at starte tiden?\" og kan starte tiden fra dengang."
-  en: "• If you were away while time was running, Time Snapper asks whether the time should be a break (☰ → Away from the computer).\n• If the computer was asleep, the time stopped while it slept, and you can continue afterwards.\n• ☰ → Break reminder suggests a short break when you have worked for a long time.\n• If you work for a while without recording time, Time Snapper asks \"Forgot to start the time?\" and can start it from back then."
+  da: "• Har du været væk, mens tiden kørte, spørger KronoLog, om tiden skal være pause (☰ → Væk fra computeren).\n• Har computeren sovet, er tiden stoppet, mens den sov, og du kan fortsætte bagefter.\n• ☰ → Pausepåmindelse foreslår en kort pause, når du har arbejdet længe.\n• Arbejder du et stykke tid uden at tage tid, spørger KronoLog \"Glemt at starte tiden?\" og kan starte tiden fra dengang."
+  en: "• If you were away while time was running, KronoLog asks whether the time should be a break (☰ → Away from the computer).\n• If the computer was asleep, the time stopped while it slept, and you can continue afterwards.\n• ☰ → Break reminder suggests a short break when you have worked for a long time.\n• If you work for a while without recording time, KronoLog asks \"Forgot to start the time?\" and can start it from back then."
 help.breathing:
   da: "Åndedrætsøvelser"
   en: "Breathing exercises"
@@ -1254,8 +1254,8 @@ help.tray:
   da: "Systembakke og opdateringer"
   en: "System tray and updates"
 help.tray_body:
-  da: "• Lukker du vinduet, lægger Time Snapper sig i systembakken, og tiden kører videre. Klik på ikonet for at vise vinduet; højreklik for en menu.\n• Den røde prik på ikonet viser, at tiden kører.\n• Time Snapper søger selv efter nye versioner og viser et banner, når der er en (☰ → Opdateringer).\n• Hver dag gemmes en sikkerhedskopi af dine data; de sidste 14 dage kan gendannes under ☰ → Sikkerhedskopi."
-  en: "• If you close the window, Time Snapper goes to the system tray and the time keeps running. Click the icon to show the window; right-click for a menu.\n• The red dot on the icon shows that time is running.\n• Time Snapper checks for new versions by itself and shows a banner when there is one (☰ → Updates).\n• A backup of your data is saved every day; the last 14 days can be restored under ☰ → Backup."
+  da: "• Lukker du vinduet, lægger KronoLog sig i systembakken, og tiden kører videre. Klik på ikonet for at vise vinduet; højreklik for en menu.\n• Den røde prik på ikonet viser, at tiden kører.\n• KronoLog søger selv efter nye versioner og viser et banner, når der er en (☰ → Opdateringer).\n• Hver dag gemmes en sikkerhedskopi af dine data; de sidste 14 dage kan gendannes under ☰ → Sikkerhedskopi."
+  en: "• If you close the window, KronoLog goes to the system tray and the time keeps running. Click the icon to show the window; right-click for a menu.\n• The red dot on the icon shows that time is running.\n• KronoLog checks for new versions by itself and shows a banner when there is one (☰ → Updates).\n• A backup of your data is saved every day; the last 14 days can be restored under ☰ → Backup."
 tips.did_you_know:
   da: "Vidste du…?"
   en: "Did you know…?"
@@ -1287,8 +1287,8 @@ tips.bar:
   da: "Træk hvor som helst i den sammenfoldede bjælke for at flytte den."
   en: "Drag anywhere on the collapsed bar to move it."
 tips.autocall:
-  da: "Time Snapper kan tage telefonen af sig selv, når Teams bruger mikrofonen (☰ → Opkald)."
-  en: "Time Snapper can start a phone call by itself when Teams uses the microphone (☰ → Calls)."
+  da: "KronoLog kan tage telefonen af sig selv, når Teams bruger mikrofonen (☰ → Opkald)."
+  en: "KronoLog can start a phone call by itself when Teams uses the microphone (☰ → Calls)."
 tips.keys:
   da: "Ctrl+K skifter projekt, Ctrl+P holder pause og Ctrl+T tager telefonen."
   en: "Ctrl+K switches project, Ctrl+P takes a break and Ctrl+T starts a phone call."

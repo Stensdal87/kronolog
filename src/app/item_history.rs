@@ -88,7 +88,7 @@ impl ItemHistory {
     }
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     pub(super) fn open_item_history(&mut self, scope: Scope) {
         self.item_history = Some(ItemHistory::new(scope));
     }

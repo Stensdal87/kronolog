@@ -78,7 +78,7 @@ enum HistoryView {
     Week,
 }
 
-pub struct TimeSnapperApp {
+pub struct KronoLogApp {
     data: Data,
     /// Beskeder fra en ny kopi af programmet, der blev startet (den lukker selv).
     instance: Option<crate::single_instance::Instance>,
@@ -226,7 +226,7 @@ struct AwayPrompt {
     to: DateTime<Local>,
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     pub fn new(ctx: &egui::Context, path: PathBuf) -> Self {
         let (data, error) = match Data::load(&path) {
             Ok(d) => (d, None),
@@ -1346,7 +1346,7 @@ impl TimeSnapperApp {
     }
 }
 
-impl eframe::App for TimeSnapperApp {
+impl eframe::App for KronoLogApp {
     /// Kaldes før hver `ui` og også mens vinduet er skjult i systembakken, så
     /// timeren, systembakken og "væk"-registreringen virker uden vinduet.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -1543,7 +1543,7 @@ impl eframe::App for TimeSnapperApp {
     }
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Det fulde program: faner, indstillinger og Timer/Historik.
     fn full_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::Panel::top("tabs").show(ui, |ui| {
@@ -1624,7 +1624,7 @@ impl TimeSnapperApp {
     }
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Spørger hvor det ældste ikke-registrerede telefonopkald skal registreres.
     /// Enter registrerer (når et mål er udfyldt), Esc lukker dialogen uden at
     /// miste opkaldet.
@@ -1892,7 +1892,7 @@ impl TimeSnapperApp {
     }
 }
 
-impl TimeSnapperApp {
+impl KronoLogApp {
     /// Om en dialog er åben (så genveje og bjælken venter).
     fn dialog_open(&self) -> bool {
         (self.call_dialog_open && !self.data.unassigned.is_empty())
@@ -2046,7 +2046,7 @@ impl TimeSnapperApp {
         if self.logged_auto_call != Some(settings.auto_call) {
             self.logged_auto_call = Some(settings.auto_call);
             self.mic_log.write(&format!(
-                "Time Snapper {}: automatisk telefon {}, programmer: \"{}\"",
+                "KronoLog {}: automatisk telefon {}, programmer: \"{}\"",
                 env!("CARGO_PKG_VERSION"),
                 if settings.auto_call { "TIL" } else { "FRA" },
                 settings.call_apps
@@ -2774,7 +2774,7 @@ impl TimeSnapperApp {
         });
 
         ui.add_space(20.0);
-        ui.label(RichText::new(format!("Time Snapper {}", env!("CARGO_PKG_VERSION"))).weak().small());
+        ui.label(RichText::new(format!("KronoLog {}", env!("CARGO_PKG_VERSION"))).weak().small());
         ui.add_space(4.0);
     }
 

@@ -183,11 +183,11 @@ mod platform {
 
     impl ksni::Tray for KsniTray {
         fn id(&self) -> String {
-            "time-snapper".into()
+            "kronolog".into()
         }
 
         fn title(&self) -> String {
-            "Time Snapper".into()
+            "KronoLog".into()
         }
 
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
@@ -195,7 +195,7 @@ mod platform {
         }
 
         fn tool_tip(&self) -> ksni::ToolTip {
-            ksni::ToolTip { title: "Time Snapper".into(), description: self.state.status.clone(), ..Default::default() }
+            ksni::ToolTip { title: "KronoLog".into(), description: self.state.status.clone(), ..Default::default() }
         }
 
         fn activate(&mut self, _x: i32, _y: i32) {
@@ -291,7 +291,7 @@ mod platform {
             let (menu, status_item) = build_menu(&built);
             let icon = TrayIconBuilder::new()
                 .with_icon(icon)
-                .with_tooltip("Time Snapper")
+                .with_tooltip("KronoLog")
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
                 .build()
@@ -312,7 +312,7 @@ mod platform {
             } else {
                 self.status_item.set_text(&state.status);
             }
-            let _ = self.icon.set_tooltip(Some(format!("Time Snapper\n{}", state.status)));
+            let _ = self.icon.set_tooltip(Some(format!("KronoLog\n{}", state.status)));
         }
 
         pub fn set_icon(&self, icon: &egui::IconData) {

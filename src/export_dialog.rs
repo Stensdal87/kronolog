@@ -214,9 +214,9 @@ impl ExportDialog {
             FileFormat::Csv => ("csv", "CSV"),
         };
         let scope = self.scope.map(|s| format!("_{}", file_safe(&data.scope_label(s)))).unwrap_or_default();
-        let name = format!("timesnapper{scope}_{}_{}.{ext}", from.format("%Y-%m-%d"), to.format("%Y-%m-%d"));
+        let name = format!("kronolog{scope}_{}_{}.{ext}", from.format("%Y-%m-%d"), to.format("%Y-%m-%d"));
         // Med vores vindue som forælder lægger vinduesmanageren dialogen ovenpå,
-        // også når Time Snapper er sat til at ligge øverst.
+        // også når KronoLog er sat til at ligge øverst.
         let mut dialog = rfd::FileDialog::new()
             .set_parent(frame)
             .set_title(tr!("export.save_title"))
