@@ -330,17 +330,20 @@ break.skip_hint:
   da: "Tæl forfra fra nu"
   en: "Start counting again from now"
 breathing.ex_box:
-  da: "Boks (4-4-4-4)"
-  en: "Box (4-4-4-4)"
-breathing.ex_478:
-  da: "4-7-8 (ind, hold, ud)"
-  en: "4-7-8 (in, hold, out)"
-breathing.ex_578:
-  da: "5-7-8 (ind, hold, ud)"
-  en: "5-7-8 (in, hold, out)"
+  da: "Boks - Balance"
+  en: "Box - Balance"
 breathing.ex_calm:
-  da: "Rolig (ind 4, ud 6)"
-  en: "Calm (in 4, out 6)"
+  da: "Roligt - Balance"
+  en: "Calm - Balance"
+breathing.ex_bottom:
+  da: "Bund Triangel - Ro"
+  en: "Bottom Triangle - Relax"
+breathing.ex_478:
+  da: "4-7-8 - Ro"
+  en: "4-7-8 - Relax"
+breathing.ex_top:
+  da: "Top Triangel - Energi"
+  en: "Top Triangle - Energy"
 breathing.in:
   da: "Træk vejret ind gennem næsen"
   en: "Breathe in through your nose"

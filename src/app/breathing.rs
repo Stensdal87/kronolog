@@ -4,8 +4,9 @@
 //! Hver øvelse tegnes som en figur med én side pr. fase, og retningen viser
 //! hvad man gør: ind går opad, hold er vandret (langs toppen med fulde lunger,
 //! langs bunden med tomme), og ud går nedad. Længden følger varigheden; ud er
-//! den side der lukker figuren. Boksvejrtrækning bliver en firkant, 4-7-8 en
-//! retvinklet trekant, og ind/ud uden hold en lodret linje. En cirkel i midten
+//! den side der lukker figuren. Boksvejrtrækning bliver en firkant, 4-7-8 og
+//! top-trianglerne en trekant med toppen vandret, bund-trianglen en trekant med
+//! bunden vandret, og ind/ud uden hold en lodret linje. En cirkel i midten
 //! vokser, når man trækker vejret ind.
 
 use std::f32::consts::PI;
@@ -19,15 +20,20 @@ use super::*;
 /// De øvelser man kan vælge imellem i indstillingerne.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Default, Debug)]
 pub enum Exercise {
-    /// Ind 4 s, hold 4 s, ud 4 s, hold 4 s.
+    /// Balance: ind 4 s, hold 4 s, ud 4 s, hold 4 s.
     #[default]
     Box,
-    /// Ind 4 s, hold 7 s, ud 8 s.
-    FourSevenEight,
-    /// Ind 5 s, hold 7 s, ud 8 s.
-    FiveSevenEight,
-    /// Ind 4 s, ud 6 s.
+    /// Balance: ind 5 s, ud 5 s (tidligere ind 4, ud 6).
     Calm,
+    /// Ro: ind 4 s, ud 5 s, hold 5 s med tomme lunger.
+    BottomTriangle,
+    /// Ro: ind 4 s, hold 7 s, ud 8 s. Den fjernede 5-7-8 læses som denne.
+    #[serde(alias = "FiveSevenEight")]
+    FourSevenEight,
+    /// Energi: ind 4 s, hold 4 s, ud 4 s.
+    TopTriangle4,
+    /// Energi: ind 6 s, hold 6 s, ud 6 s.
+    TopTriangle6,
     /// En øvelse brugeren selv har lavet (#30).
     Custom(CustomExercise),
 }
@@ -50,16 +56,25 @@ impl CustomExercise {
 impl Exercise {
     /// De indbyggede øvelser efterfulgt af brugerens egne.
     pub fn all(custom: &[CustomExercise]) -> Vec<Exercise> {
-        let built_in = [Exercise::Box, Exercise::FourSevenEight, Exercise::FiveSevenEight, Exercise::Calm];
+        let built_in = [
+            Exercise::Box,
+            Exercise::Calm,
+            Exercise::BottomTriangle,
+            Exercise::FourSevenEight,
+            Exercise::TopTriangle4,
+            Exercise::TopTriangle6,
+        ];
         built_in.into_iter().chain(custom.iter().cloned().map(Exercise::Custom)).collect()
     }
 
     pub fn label(&self) -> String {
         match self {
-            Exercise::Box => tr!("breathing.ex_box"),
-            Exercise::FourSevenEight => tr!("breathing.ex_478"),
-            Exercise::FiveSevenEight => tr!("breathing.ex_578"),
-            Exercise::Calm => tr!("breathing.ex_calm"),
+            Exercise::Box => format!("{} (4-4-4-4)", tr!("breathing.ex_box")),
+            Exercise::Calm => format!("{} (5-0-5-0)", tr!("breathing.ex_calm")),
+            Exercise::BottomTriangle => format!("{} (4-0-5-5)", tr!("breathing.ex_bottom")),
+            Exercise::FourSevenEight => format!("{} (4-7-8-0)", tr!("breathing.ex_478")),
+            Exercise::TopTriangle4 => format!("{} (4-4-4-0)", tr!("breathing.ex_top")),
+            Exercise::TopTriangle6 => format!("{} (6-6-6-0)", tr!("breathing.ex_top")),
             Exercise::Custom(c) => format!("{} ({})", c.name, c.pattern()),
         }
     }
@@ -67,9 +82,11 @@ impl Exercise {
     fn phases(&self) -> Vec<(Phase, f32)> {
         match self {
             Exercise::Box => vec![(Phase::In, 4.0), (Phase::HoldFull, 4.0), (Phase::Out, 4.0), (Phase::HoldEmpty, 4.0)],
+            Exercise::Calm => vec![(Phase::In, 5.0), (Phase::Out, 5.0)],
+            Exercise::BottomTriangle => vec![(Phase::In, 4.0), (Phase::Out, 5.0), (Phase::HoldEmpty, 5.0)],
             Exercise::FourSevenEight => vec![(Phase::In, 4.0), (Phase::HoldFull, 7.0), (Phase::Out, 8.0)],
-            Exercise::FiveSevenEight => vec![(Phase::In, 5.0), (Phase::HoldFull, 7.0), (Phase::Out, 8.0)],
-            Exercise::Calm => vec![(Phase::In, 4.0), (Phase::Out, 6.0)],
+            Exercise::TopTriangle4 => vec![(Phase::In, 4.0), (Phase::HoldFull, 4.0), (Phase::Out, 4.0)],
+            Exercise::TopTriangle6 => vec![(Phase::In, 6.0), (Phase::HoldFull, 6.0), (Phase::Out, 6.0)],
             Exercise::Custom(c) => [Phase::In, Phase::HoldFull, Phase::Out, Phase::HoldEmpty]
                 .into_iter()
                 .zip(c.seconds)
@@ -597,6 +614,27 @@ mod tests {
 
         assert_eq!(Exercise::FourSevenEight.rounds_for(2), 6, "19 s pr. runde");
         assert_eq!(Exercise::Calm.rounds_for(1), 6, "10 s pr. runde");
+        assert_eq!(Exercise::BottomTriangle.rounds_for(1), 4, "14 s pr. runde");
+        assert_eq!(Exercise::TopTriangle6.rounds_for(2), 7, "18 s pr. runde");
+    }
+
+    #[test]
+    fn default_exercises_in_order_and_old_choice_still_loads() {
+        let labels: Vec<String> = Exercise::all(&[]).iter().map(Exercise::label).collect();
+        let patterns: Vec<&str> = labels.iter().map(|l| &l[l.rfind('(').unwrap()..]).collect();
+        assert_eq!(patterns, ["(4-4-4-4)", "(5-0-5-0)", "(4-0-5-5)", "(4-7-8-0)", "(4-4-4-0)", "(6-6-6-0)"]);
+        // Mønsteret i navnet passer med faserne (ind, hold, ud, hold).
+        for exercise in Exercise::all(&[]) {
+            let total: f32 = exercise.phases().iter().map(|(_, s)| s).sum();
+            let label = exercise.label();
+            let pattern: f32 = label[label.rfind('(').unwrap() + 1..label.len() - 1]
+                .split('-')
+                .map(|n| n.parse::<f32>().unwrap())
+                .sum();
+            assert_eq!(total, pattern, "{label}");
+        }
+        let old: Exercise = serde_json::from_str("\"FiveSevenEight\"").unwrap();
+        assert_eq!(old, Exercise::FourSevenEight);
     }
 
     fn close(a: Pos2, b: Pos2) -> bool {
@@ -614,7 +652,7 @@ mod tests {
 
     #[test]
     fn directions_show_what_to_do() {
-        for exercise in [Exercise::FourSevenEight, Exercise::FiveSevenEight] {
+        for exercise in [Exercise::FourSevenEight, Exercise::TopTriangle4, Exercise::TopTriangle6] {
             let p = figure(&exercise.phases());
             let phases = exercise.phases();
             assert_eq!(p.len(), 3);
@@ -635,7 +673,7 @@ mod tests {
 
     #[test]
     fn hold_with_empty_lungs_runs_along_the_bottom() {
-        let p = figure(&[(Phase::In, 4.0), (Phase::Out, 4.0), (Phase::HoldEmpty, 4.0)]);
+        let p = figure(&Exercise::BottomTriangle.phases());
         let out = p[2] - p[1];
         let hold = p[0] - p[2];
         assert!(out.y > 0.0, "ud går nedad");
