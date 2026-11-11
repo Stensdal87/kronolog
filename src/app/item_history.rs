@@ -286,7 +286,8 @@ impl TimeSnapperApp {
                     ui.end_row();
 
                     match history.view {
-                        HistoryView::Summary => {
+                        // Ugevisningen findes kun i Historik; her vises den aldrig.
+                        HistoryView::Summary | HistoryView::Week => {
                             if !show_project {
                                 continue;
                             }

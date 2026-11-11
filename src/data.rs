@@ -267,6 +267,9 @@ pub struct Settings {
     pub check_updates: bool,
     /// Prikken i bjælken og i systembakken blinker, mens tiden kører.
     pub blink: bool,
+    /// "Glemt at starte tiden?" efter `forgot_minutes` ved computeren uden tid.
+    pub forgot_reminder: bool,
+    pub forgot_minutes: u32,
     /// "Vidste du…?"-tips nederst i timer-fanen.
     pub show_tips: bool,
     /// Tag telefonen, når et af `call_apps` bruger mikrofonen (#27).
@@ -311,6 +314,8 @@ impl Default for Settings {
             language: Default::default(),
             check_updates: true,
             blink: true,
+            forgot_reminder: true,
+            forgot_minutes: 15,
             show_tips: true,
             auto_call: false,
             call_apps: "Teams, Zoom".to_owned(),
@@ -518,6 +523,24 @@ impl Data {
         if let Some(active) = &mut self.active {
             active.project_id = Some(project_id);
             active.target = CallTarget::default();
+        }
+    }
+
+    /// Det tidligste tidspunkt i dag fra `wanted`, tiden kan startes bagud fra:
+    /// ikke før den seneste registrering sluttede, og ikke efter nu.
+    pub fn start_from_time(&self, wanted: DateTime<Local>) -> DateTime<Local> {
+        let now = Local::now();
+        let latest_end = self.entries.iter().map(|e| e.end).filter(|end| *end <= now).max();
+        latest_end.map_or(wanted, |end| wanted.max(end)).min(now)
+    }
+
+    /// Starter tid på projektet fra `from` (bagud), f.eks. når man har glemt at
+    /// starte den. Se `start_from_time`.
+    pub fn start_from(&mut self, project_id: Id, from: DateTime<Local>) {
+        let from = self.start_from_time(from);
+        self.start(project_id);
+        if let Some(active) = &mut self.active {
+            active.start = from;
         }
     }
 
@@ -902,6 +925,22 @@ impl Data {
         list
     }
 
+/// Huller på mindst `GAP_MIN` mellem dagens registreringer (sorteret efter
+    /// start): tidsrum, hvor der ikke er registreret noget.
+    pub fn gaps(entries: &[DayEntry]) -> Vec<(DateTime<Local>, DateTime<Local>)> {
+        let mut gaps = Vec::new();
+        let mut covered_until: Option<DateTime<Local>> = None;
+        for e in entries {
+            if let Some(until) = covered_until
+                && e.entry.start - until >= GAP_MIN
+            {
+                gaps.push((until, e.entry.start));
+            }
+            covered_until = Some(covered_until.map_or(e.entry.end, |u| u.max(e.entry.end)));
+        }
+        gaps
+    }
+
     /// Den kørende timer som registrering frem til nu, hvis den hører til et projekt.
     fn running_entry(&self) -> Option<TimeEntry> {
         let a = self.active.as_ref()?;
@@ -1098,6 +1137,9 @@ fn same_name(a: &str, b: &str) -> bool {
 }
 
 /// Runder op til nærmeste påbegyndte kvarter. Hele kvarterer og nul ændres ikke.
+/// Huller kortere end dette vises ikke i Historik.
+pub const GAP_MIN: Duration = Duration::minutes(5);
+
 pub fn round_up_quarter(d: Duration) -> Duration {
     let quarter = 15 * 60;
     let secs = d.num_seconds().max(0);
@@ -1713,6 +1755,41 @@ mod tests {
         assert!(loaded.active.is_none());
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].duration(), Duration::minutes(30));
+    }
+
+    #[test]
+    fn forgotten_time_starts_back_but_not_before_the_last_entry() {
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        let p = data.add_project(c, "A");
+        let now = Local::now();
+        let wanted = now - Duration::minutes(20);
+        data.start_from(p, wanted);
+        assert_eq!(data.active.as_ref().unwrap().start, wanted);
+
+        // Sluttede den seneste registrering for 10 minutter siden, starter tiden dér.
+        data.active = None;
+        let last_end = now - Duration::minutes(10);
+        data.entries.push(TimeEntry { project_id: p, start: now - Duration::hours(1), end: last_end, ..Default::default() });
+        data.start_from(p, wanted);
+        assert_eq!(data.active.as_ref().unwrap().start, last_end);
+        assert_eq!(data.entries.len(), 1, "intet overlap");
+    }
+
+    #[test]
+    fn gaps_between_entries_are_found() {
+        let at = |h, m| Local.with_ymd_and_hms(2026, 11, 12, h, m, 0).unwrap();
+        let entry = |from: DateTime<Local>, to| DayEntry {
+            index: Some(0),
+            entry: TimeEntry { project_id: 1, start: from, end: to, ..Default::default() },
+        };
+        let entries = [
+            entry(at(8, 0), at(10, 0)),
+            entry(at(9, 0), at(10, 30)),  // overlapper: dækker til 10:30
+            entry(at(10, 33), at(11, 0)), // 3 min: for lidt til at vise
+            entry(at(12, 0), at(13, 0)),
+        ];
+        assert_eq!(Data::gaps(&entries), vec![(at(11, 0), at(12, 0))]);
     }
 
     #[test]

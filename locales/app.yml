@@ -1206,8 +1206,8 @@ help.history:
   da: "Historik og rettelser"
   en: "History and corrections"
 help.history_body:
-  da: "• 📅 Historik viser én dag ad gangen. Skift dag med pilene øverst.\n• Summeret viser tiden pr. projekt. Klik på ⏵ for at se dagens registreringer for projektet.\n• Klik på en registrering for at rette tid, projekt, type eller note. Der kan du også slette den.\n• ✂ Del op i rettevinduet deler en registrering i to, f.eks. hvis du glemte at skifte projekt.\n• ➕ tilføjer en registrering, du har glemt. ⏷ ved tiden viser hver halve time, og \"min\" er varigheden."
-  en: "• 📅 History shows one day at a time. Change day with the arrows at the top.\n• Summary shows the time per project. Click ⏵ to see the day's entries for the project.\n• Click an entry to change its time, project, type or note. You can also delete it there.\n• ✂ Split in the edit window splits an entry in two, e.g. if you forgot to switch project.\n• ➕ adds an entry you forgot. ⏷ next to the time lists every half hour, and \"min\" is the duration."
+  da: "• 📅 Historik viser én dag ad gangen. Skift dag med pilene øverst.\n• Summeret viser tiden pr. projekt. Klik på ⏵ for at se dagens registreringer for projektet.\n• Klik på en registrering for at rette tid, projekt, type eller note. Der kan du også slette den.\n• ✂ Del op i rettevinduet deler en registrering i to, f.eks. hvis du glemte at skifte projekt.\n• ➕ tilføjer en registrering, du har glemt. ⏷ ved tiden viser hver halve time, og \"min\" er varigheden.\n• Under Alle står huller i dagen med orange: \"+ Ikke registreret\". Klik for at udfylde hullet.\n• Uge viser ugen som et timeregnskab med afrundet tid pr. projekt og dag. Klik på en tid for at krydse den af."
+  en: "• 📅 History shows one day at a time. Change day with the arrows at the top.\n• Summary shows the time per project. Click ⏵ to see the day's entries for the project.\n• Click an entry to change its time, project, type or note. You can also delete it there.\n• ✂ Split in the edit window splits an entry in two, e.g. if you forgot to switch project.\n• ➕ adds an entry you forgot. ⏷ next to the time lists every half hour, and \"min\" is the duration.\n• Under All, gaps in the day are shown in orange: \"+ Not recorded\". Click to fill the gap.\n• Week shows the week as a timesheet with rounded time per project and day. Click a time to tick it off."
 help.billing:
   da: "Afrunding og afkrydsning"
   en: "Rounding and ticking off"
@@ -1242,8 +1242,8 @@ help.away:
   da: "Væk fra computeren og pauser"
   en: "Away from the computer and breaks"
 help.away_body:
-  da: "• Har du været væk, mens tiden kørte, spørger Time Snapper, om tiden skal være pause (☰ → Væk fra computeren).\n• Har computeren sovet, er tiden stoppet, mens den sov, og du kan fortsætte bagefter.\n• ☰ → Pausepåmindelse foreslår en kort pause, når du har arbejdet længe."
-  en: "• If you were away while time was running, Time Snapper asks whether the time should be a break (☰ → Away from the computer).\n• If the computer was asleep, the time stopped while it slept, and you can continue afterwards.\n• ☰ → Break reminder suggests a short break when you have worked for a long time."
+  da: "• Har du været væk, mens tiden kørte, spørger Time Snapper, om tiden skal være pause (☰ → Væk fra computeren).\n• Har computeren sovet, er tiden stoppet, mens den sov, og du kan fortsætte bagefter.\n• ☰ → Pausepåmindelse foreslår en kort pause, når du har arbejdet længe.\n• Arbejder du et stykke tid uden at tage tid, spørger Time Snapper \"Glemt at starte tiden?\" og kan starte tiden fra dengang."
+  en: "• If you were away while time was running, Time Snapper asks whether the time should be a break (☰ → Away from the computer).\n• If the computer was asleep, the time stopped while it slept, and you can continue afterwards.\n• ☰ → Break reminder suggests a short break when you have worked for a long time.\n• If you work for a while without recording time, Time Snapper asks \"Forgot to start the time?\" and can start it from back then."
 help.breathing:
   da: "Åndedrætsøvelser"
   en: "Breathing exercises"
@@ -1254,8 +1254,8 @@ help.tray:
   da: "Systembakke og opdateringer"
   en: "System tray and updates"
 help.tray_body:
-  da: "• Lukker du vinduet, lægger Time Snapper sig i systembakken, og tiden kører videre. Klik på ikonet for at vise vinduet; højreklik for en menu.\n• Den røde prik på ikonet viser, at tiden kører.\n• Time Snapper søger selv efter nye versioner og viser et banner, når der er en (☰ → Opdateringer)."
-  en: "• If you close the window, Time Snapper goes to the system tray and the time keeps running. Click the icon to show the window; right-click for a menu.\n• The red dot on the icon shows that time is running.\n• Time Snapper checks for new versions by itself and shows a banner when there is one (☰ → Updates)."
+  da: "• Lukker du vinduet, lægger Time Snapper sig i systembakken, og tiden kører videre. Klik på ikonet for at vise vinduet; højreklik for en menu.\n• Den røde prik på ikonet viser, at tiden kører.\n• Time Snapper søger selv efter nye versioner og viser et banner, når der er en (☰ → Opdateringer).\n• Hver dag gemmes en sikkerhedskopi af dine data; de sidste 14 dage kan gendannes under ☰ → Sikkerhedskopi."
+  en: "• If you close the window, Time Snapper goes to the system tray and the time keeps running. Click the icon to show the window; right-click for a menu.\n• The red dot on the icon shows that time is running.\n• Time Snapper checks for new versions by itself and shows a banner when there is one (☰ → Updates).\n• A backup of your data is saved every day; the last 14 days can be restored under ☰ → Backup."
 tips.did_you_know:
   da: "Vidste du…?"
   en: "Did you know…?"
@@ -1310,3 +1310,99 @@ settings.show_tips:
 action.help:
   da: "Hjælp"
   en: "Help"
+backup.title:
+  da: "Sikkerhedskopi"
+  en: "Backup"
+backup.hint:
+  da: "Der gemmes en kopi af dine data hver dag. De sidste %{days} dage beholdes."
+  en: "A copy of your data is saved every day. The last %{days} days are kept."
+backup.restore:
+  da: "Gendan fra…"
+  en: "Restore from…"
+backup.none:
+  da: "Ingen kopier endnu."
+  en: "No copies yet."
+backup.open_folder:
+  da: "Åbn mappen"
+  en: "Open folder"
+backup.confirm_title:
+  da: "Gendan sikkerhedskopi?"
+  en: "Restore backup?"
+backup.confirm:
+  da: "Dine data bliver som den %{date} ved dagens start. Det, der er registreret siden, forsvinder."
+  en: "Your data will be as on %{date} at the start of the day. Anything recorded since will be gone."
+backup.confirm_safe:
+  da: "De nuværende data gemmes først i mappen med kopierne, så du kan fortryde."
+  en: "The current data is saved in the backup folder first, so you can undo."
+backup.restore_button:
+  da: "Gendan"
+  en: "Restore"
+backup.err:
+  da: "Kunne ikke lave dagens sikkerhedskopi: %{error}"
+  en: "Could not make today's backup: %{error}"
+backup.err_restore:
+  da: "Kunne ikke gendanne: %{error}"
+  en: "Could not restore: %{error}"
+week.tab:
+  da: "Uge"
+  en: "Week"
+week.title:
+  da: "Uge %{week} (%{from} – %{to})"
+  en: "Week %{week} (%{from} – %{to})"
+week.days:
+  da: "Ma,Ti,On,To,Fr,Lø,Sø"
+  en: "Mo,Tu,We,Th,Fr,Sa,Su"
+week.none:
+  da: "Ingen registreringer denne uge."
+  en: "No entries this week."
+week.open_day:
+  da: "Vis %{date}"
+  en: "Show %{date}"
+week.click_to_bill:
+  da: "Klik for at krydse af"
+  en: "Click to tick off"
+week.billed_changed:
+  da: "Krydset af med %{old}, men tiden er ændret. Klik for at krydse af med den nye tid."
+  en: "Ticked off with %{old}, but the time has changed. Click to tick off with the new time."
+week.hint:
+  da: "Afrundet tid pr. dag, som i Summeret. Klik på en tid for at krydse den af (grøn); klik på en ugedag for at se dagen."
+  en: "Rounded time per day, as in Summary. Click a time to tick it off (green); click a weekday to see the day."
+gap.label:
+  da: "+ Ikke registreret"
+  en: "+ Not recorded"
+gap.fill_hint:
+  da: "Klik for at registrere tiden i hullet"
+  en: "Click to record the time in the gap"
+gap.summary:
+  da: "⚠ Huller i dagen: %{count} (%{time} ikke registreret)"
+  en: "⚠ Gaps in the day: %{count} (%{time} not recorded)"
+gap.summary_hint:
+  da: "Klik for at se dem under Alle og udfylde dem"
+  en: "Click to see them under All and fill them in"
+forgot.title:
+  da: "⏱ Glemt at starte tiden?"
+  en: "⏱ Forgot to start the time?"
+forgot.text:
+  da: "Du har været ved computeren siden %{time} uden at tage tid."
+  en: "You have been at the computer since %{time} without recording time."
+forgot.choose:
+  da: "▶ Vælg projekt (fra %{time})"
+  en: "▶ Choose project (from %{time})"
+forgot.snooze:
+  da: "Om en time"
+  en: "In an hour"
+forgot.not_today:
+  da: "Ikke i dag"
+  en: "Not today"
+picker.start_from_title:
+  da: "Start tiden fra %{time}"
+  en: "Start the time from %{time}"
+settings.forgot_check:
+  da: "Mind mig om det, når jeg arbejder uden at tage tid"
+  en: "Remind me when I work without recording time"
+history.all_short:
+  da: "Alle"
+  en: "All"
+tips.week:
+  da: "Uge under Historik viser hele ugen som et timeregnskab, klar til at overføre."
+  en: "Week under History shows the whole week as a timesheet, ready to transfer."

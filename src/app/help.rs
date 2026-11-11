@@ -75,7 +75,8 @@ impl Topic {
 }
 
 /// "Vidste du…?": tekst (`tips.<key>`) og emnet, der forklarer mere.
-const TIPS: [(&str, Topic); 11] = [
+const TIPS: [(&str, Topic); 12] = [
+    ("week", Topic::History),
     ("split", Topic::History),
     ("move", Topic::Switch),
     ("item", Topic::Lists),
@@ -270,6 +271,8 @@ mod tests {
     #[test]
     fn search_finds_topics_by_title_or_text() {
         rust_i18n::set_locale("da");
+        assert!(Topic::History.matches("timeregnskab"), "ugeoversigten står under historik");
+        assert!(Topic::Tray.matches("sikkerhedskopi"));
         assert!(Topic::History.matches("del op"), "✂ Del op står under historik");
         assert!(Topic::Switch.matches("SKYDEREN"), "store bogstaver er lige meget");
         assert!(!Topic::Breathing.matches("faktura"));

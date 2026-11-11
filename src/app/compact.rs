@@ -30,11 +30,17 @@ pub(super) struct ProjectPicker {
     moving: bool,
     /// Ved flytning: flyt kun tiden fra dette tidspunkt (del op); `None` er det hele.
     from: Option<DateTime<Local>>,
+    /// Start tiden fra dette tidspunkt i stedet for nu ("Glemt at starte tiden?").
+    start_from: Option<DateTime<Local>>,
 }
 
 impl ProjectPicker {
     pub(super) fn moving() -> Self {
         Self { moving: true, ..Default::default() }
+    }
+
+    pub(super) fn starting_from(from: DateTime<Local>) -> Self {
+        Self { start_from: Some(from), ..Default::default() }
     }
 }
 
@@ -387,7 +393,12 @@ impl TimeSnapperApp {
         let mut close = false;
 
         ui.horizontal(|ui| {
-            ui.label(RichText::new(if picker.moving { tr!("picker.move_title") } else { tr!("picker.title") }).strong());
+            let title = match picker.start_from {
+                _ if picker.moving => tr!("picker.move_title"),
+                Some(from) => tr!("picker.start_from_title", time = from.format("%H:%M")),
+                None => tr!("picker.title"),
+            };
+            ui.label(RichText::new(title).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 close |= ui.small_button("×").on_hover_text(tr!("picker.close")).clicked();
             });
@@ -484,6 +495,8 @@ impl TimeSnapperApp {
                     Some(at) => self.data.split_active(at, id),
                     None => self.data.move_active(id),
                 }
+            } else if let Some(from) = picker.start_from {
+                self.data.start_from(id, from);
             } else {
                 self.data.start(id);
             }

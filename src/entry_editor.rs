@@ -164,6 +164,15 @@ impl EntryEditor {
         }
     }
 
+    /// Ny registrering, der fylder et hul i dagen ud (fra Historik).
+    pub fn new_between(start: DateTime<Local>, end: DateTime<Local>) -> Self {
+        let mut editor = Self::new(start.date_naive(), Some(start));
+        editor.start = start.format("%H:%M").to_string();
+        editor.end = end.format("%H:%M").to_string();
+        editor.end_changed();
+        editor
+    }
+
     /// Med projektet valgt på forhånd.
     pub fn with_project(mut self, project_id: Option<Id>) -> Self {
         self.project_id = project_id;

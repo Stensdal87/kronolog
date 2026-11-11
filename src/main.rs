@@ -15,6 +15,7 @@ macro_rules! tr {
 
 mod app;
 mod autostart;
+mod backup;
 mod data;
 mod entry_editor;
 mod export;

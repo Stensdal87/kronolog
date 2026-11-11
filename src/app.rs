@@ -3,16 +3,18 @@
 mod break_reminder;
 pub(crate) mod breathing;
 mod compact;
+mod forgot;
 mod help;
 mod item_history;
 mod shortcuts_dialog;
+mod week;
 
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::TAU;
 use std::path::PathBuf;
 use std::time::{Duration as StdDuration, Instant};
 
-use chrono::{DateTime, Duration, Local, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
 use eframe::egui::{self, Color32, Pos2, RichText, Stroke, Vec2};
 
 use crate::entry_editor::EntryEditor;
@@ -70,6 +72,8 @@ enum HistoryView {
     Summary,
     /// Hver registrering for sig.
     All,
+    /// Ugen som timeregnskab: projekter × ugedage.
+    Week,
 }
 
 pub struct TimeSnapperApp {
@@ -144,6 +148,16 @@ pub struct TimeSnapperApp {
     new_exercise: Option<breathing::NewExercise>,
     /// Hjælpevinduet (F1).
     help: Option<help::Help>,
+    /// Ved computeren uden kørende tid siden da ("Glemt at starte tiden?").
+    present_since: Option<DateTime<Local>>,
+    /// Påmindelsen vises; værdien er, hvornår man kom.
+    forgot_prompt: Option<DateTime<Local>>,
+    /// Ingen påmindelse før da ("Om en time" / "Ikke i dag").
+    forgot_snoozed_until: Option<DateTime<Local>>,
+    /// Dagen, hvor den daglige sikkerhedskopi er lavet.
+    backed_up_on: Option<NaiveDate>,
+    /// "Gendan sikkerhedskopi?", når en kopi er valgt.
+    restore_prompt: Option<crate::backup::Backup>,
     /// "Næste tip" er trykket så mange gange i dag.
     tip_offset: usize,
     /// Rammen (titellinje og kanter), sidst vinduet havde titellinje. Bruges til
@@ -262,6 +276,11 @@ impl TimeSnapperApp {
             decorated_frame: Default::default(),
             new_exercise: None,
             help: None,
+            backed_up_on: None,
+            present_since: None,
+            forgot_prompt: None,
+            forgot_snoozed_until: None,
+            restore_prompt: None,
             tip_offset: 0,
             bar_drag_sent: false,
             bar_on_left: false,
@@ -303,6 +322,14 @@ impl TimeSnapperApp {
     }
 
     fn save(&mut self) {
+        // Første gemning hver dag: kopiér filen, som den var, før dagens ændringer.
+        let today = Local::now().date_naive();
+        if self.backed_up_on != Some(today) {
+            self.backed_up_on = Some(today);
+            if let Err(e) = crate::backup::daily(&self.path, today) {
+                self.error = Some(tr!("backup.err", error = e));
+            }
+        }
         if let Err(e) = self.data.save(&self.path) {
             self.error = Some(e);
         }
@@ -861,13 +888,27 @@ impl TimeSnapperApp {
     }
 
     fn history_tab(&mut self, ui: &mut egui::Ui) {
+        // I ugevisningen bladres der en uge ad gangen.
+        let week = self.history_view == HistoryView::Week;
+        let step = Duration::days(if week { 7 } else { 1 });
         ui.horizontal(|ui| {
             if ui.button("◀").clicked() {
-                self.history_date -= Duration::days(1);
+                self.history_date -= step;
             }
-            ui.label(RichText::new(self.history_date.format("%d-%m-%Y").to_string()).strong());
+            let title = if week {
+                let monday = week::monday_of(self.history_date);
+                tr!(
+                    "week.title",
+                    week = self.history_date.iso_week().week(),
+                    from = monday.format("%d-%m"),
+                    to = (monday + Duration::days(6)).format("%d-%m")
+                )
+            } else {
+                self.history_date.format("%d-%m-%Y").to_string()
+            };
+            ui.label(RichText::new(title).strong());
             if ui.button("▶").clicked() {
-                self.history_date += Duration::days(1);
+                self.history_date += step;
             }
             if ui.button(tr!("history.today")).clicked() {
                 self.history_date = Local::now().date_naive();
@@ -878,7 +919,10 @@ impl TimeSnapperApp {
         let entries = self.data.entries_on(self.history_date);
         let add_clicked = ui.horizontal(|ui| {
             ui.selectable_value(&mut self.history_view, HistoryView::Summary, tr!("history.summary"));
-            ui.selectable_value(&mut self.history_view, HistoryView::All, tr!("history.all"));
+            // Kort navn, så tre faner og knapperne kan være i det smalle vindue.
+            ui.selectable_value(&mut self.history_view, HistoryView::All, tr!("history.all_short"))
+                .on_hover_text(tr!("history.all"));
+            ui.selectable_value(&mut self.history_view, HistoryView::Week, tr!("week.tab"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("📤").on_hover_text(tr!("history.export_hint")).clicked() {
                     self.export = Some(ExportDialog::new());
@@ -893,12 +937,17 @@ impl TimeSnapperApp {
         }
         ui.add_space(4.0);
 
+        if self.history_view == HistoryView::Week {
+            self.week_view(ui);
+            return;
+        }
         if entries.is_empty() {
             ui.label(RichText::new(tr!("history.none")).weak());
             return;
         }
 
         let totals = self.data.totals_on(self.history_date);
+        let gaps = Data::gaps(&entries);
         let day_total = totals.iter().fold(Duration::zero(), |sum, (_, d)| sum + *d);
         let mut open_editor = None;
         let mut toggle_rounding = None;
@@ -913,7 +962,8 @@ impl TimeSnapperApp {
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("history").striped(true).show(ui, |ui| {
                 match self.history_view {
-                    HistoryView::Summary => {
+                    // Ugen er tegnet og returneret ovenfor.
+                    HistoryView::Summary | HistoryView::Week => {
                         ui.label(RichText::new("✔").weak().small()).on_hover_text(tr!("history.col_billed_hint"));
                         ui.label("");
                         ui.label(RichText::new(tr!("history.col_time")).weak().small());
@@ -1068,6 +1118,20 @@ impl TimeSnapperApp {
                     HistoryView::All => {
                         for day_entry in &entries {
                             let e = &day_entry.entry;
+                            // Et hul før registreringen: tid, der ikke er registreret.
+                            if let Some(&(from, to)) = gaps.iter().find(|(_, to)| *to == e.start) {
+                                let text = RichText::new(tr!("gap.label")).italics().color(ui.visuals().warn_fg_color);
+                                if ui.add(egui::Button::new(text).frame(false)).on_hover_text(tr!("gap.fill_hint")).clicked() {
+                                    open_editor = Some(EntryEditor::new_between(from, to));
+                                }
+                                ui.label(
+                                    RichText::new(format!("{}–{}", from.format("%H:%M"), to.format("%H:%M")))
+                                        .monospace()
+                                        .color(ui.visuals().warn_fg_color),
+                                );
+                                ui.label(RichText::new(format_duration(to - from)).monospace().weak());
+                                ui.end_row();
+                            }
                             let mut label = self.data.project_label(e.project_id);
                             if let Some(note) = &e.note {
                                 label = format!("{label} ({})", note_label(note));
@@ -1124,6 +1188,17 @@ impl TimeSnapperApp {
                 }
                 ui.end_row();
             });
+            // Huller i Summeret: kun en linje, der viser hen til Alle registreringer.
+            if self.history_view == HistoryView::Summary && !gaps.is_empty() {
+                ui.add_space(6.0);
+                let total = gaps.iter().fold(Duration::zero(), |sum, (from, to)| sum + (*to - *from));
+                let text = RichText::new(tr!("gap.summary", count = gaps.len(), time = format_hours_minutes(total)))
+                    .small()
+                    .color(ui.visuals().warn_fg_color);
+                if ui.add(egui::Button::new(text).frame(false)).on_hover_text(tr!("gap.summary_hint")).clicked() {
+                    self.history_view = HistoryView::All;
+                }
+            }
         });
 
         if open_editor.is_some() {
@@ -1168,6 +1243,7 @@ impl eframe::App for TimeSnapperApp {
             self.run_action(ctx, action, true);
         }
         self.handle_idle_events();
+        self.handle_forgot_timer(ctx);
 
         if let Some(active) = &mut self.data.active {
             if self.last_heartbeat.elapsed() >= HEARTBEAT {
@@ -1204,7 +1280,8 @@ impl eframe::App for TimeSnapperApp {
         let needs_answer = self.away_prompt.is_some()
             || self.sleep_prompt.is_some()
             || (self.call_dialog_open && pending > 0)
-            || self.break_reminder.is_open();
+            || self.break_reminder.is_open()
+            || self.forgot_prompt.is_some();
         if needs_answer && !self.window_visible {
             self.show_window(ctx);
         }
@@ -1323,9 +1400,11 @@ impl eframe::App for TimeSnapperApp {
         self.entry_editor(&ctx);
         self.away_dialog(&ctx);
         self.sleep_dialog(&ctx);
+        self.forgot_dialog(&ctx);
         self.break_dialog(&ctx);
         self.breathing_window(&ctx);
         self.new_exercise_dialog(&ctx);
+        self.restore_dialog(&ctx);
         self.item_history_window(&ctx, frame);
         self.help_window(&ctx, frame);
         self.rename_dialog(&ctx);
@@ -1711,6 +1790,8 @@ impl TimeSnapperApp {
             || self.break_reminder.is_open()
             || self.sleep_prompt.is_some()
             || self.new_exercise.is_some()
+            || self.restore_prompt.is_some()
+            || self.forgot_prompt.is_some()
     }
 
     /// Udfører en handling fra en genvejstast. `global` er når genvejen blev
@@ -2013,6 +2094,43 @@ impl TimeSnapperApp {
         !self.data.settings.blink || self.data.active.as_ref().is_none_or(|a| a.elapsed().num_seconds() % 2 == 0)
     }
 
+    /// "Gendan sikkerhedskopien fra …?" Den nuværende fil gemmes først, så
+    /// gendannelsen kan fortrydes.
+    fn restore_dialog(&mut self, ctx: &egui::Context) {
+        let Some(backup) = self.restore_prompt.clone() else { return };
+        let mut restore = false;
+        let mut cancel = false;
+        let modal = egui::Modal::new(egui::Id::unique("restore_backup")).show(ctx, |ui| {
+            ui.set_width(270.0);
+            ui.heading(tr!("backup.confirm_title"));
+            ui.label(tr!("backup.confirm", date = backup.date.format("%d-%m-%Y")));
+            ui.label(RichText::new(tr!("backup.confirm_safe")).weak().small());
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                restore |= ui.button(tr!("backup.restore_button")).clicked();
+                cancel |= ui.button(tr!("common.cancel")).clicked();
+            });
+        });
+        if modal.should_close() {
+            cancel = true;
+        }
+        if restore {
+            self.restore_prompt = None;
+            let result = crate::backup::save_before_restore(&self.path).and_then(|_| Data::load(&backup.path));
+            match result {
+                Ok(data) => {
+                    self.data = data;
+                    crate::i18n::apply(self.data.settings.language);
+                    ctx.set_theme(self.data.theme.to_egui());
+                    self.save();
+                }
+                Err(e) => self.error = Some(tr!("backup.err_restore", error = e)),
+            }
+        } else if cancel {
+            self.restore_prompt = None;
+        }
+    }
+
     /// Tiden kører på et projekt eller et opkald (ikke pause).
     fn recording(&self) -> bool {
         self.data.active.as_ref().is_some_and(|a| !a.is_note(NOTE_PAUSE))
@@ -2275,6 +2393,14 @@ impl TimeSnapperApp {
                 .weak()
                 .small(),
         );
+        // "Glemt at starte tiden?"
+        ui.checkbox(&mut settings.forgot_reminder, tr!("settings.forgot_check"));
+        ui.add_enabled_ui(settings.forgot_reminder, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(tr!("settings.after"));
+                ui.add(egui::Slider::new(&mut settings.forgot_minutes, 5..=60).step_by(5.0).suffix(" min"));
+            });
+        });
         settings_section(ui, tr!("settings.shortcuts"));
         if ui.button(tr!("settings.shortcuts_button")).clicked() {
             self.shortcuts_dialog = Some(ShortcutsDialog::default());
@@ -2330,6 +2456,31 @@ impl TimeSnapperApp {
         }
 
         // Opdateringer (#26).
+        // Daglige sikkerhedskopier.
+        settings_section(ui, tr!("backup.title"));
+        ui.label(RichText::new(tr!("backup.hint", days = crate::backup::KEEP)).weak().small());
+        let backups = crate::backup::list(&self.path);
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("restore_backup")
+                .selected_text(tr!("backup.restore"))
+                .width((ui.available_width() - 70.0).max(60.0))
+                .show_ui(ui, |ui| {
+                    if backups.is_empty() {
+                        ui.label(RichText::new(tr!("backup.none")).weak());
+                    }
+                    for backup in &backups {
+                        if ui.button(backup.date.format("%d-%m-%Y").to_string()).clicked() {
+                            self.restore_prompt = Some(backup.clone());
+                        }
+                    }
+                });
+            if ui.button(tr!("backup.open_folder")).clicked() {
+                let folder = crate::backup::folder(&self.path);
+                let _ = std::fs::create_dir_all(&folder);
+                crate::updater::open_page(&folder.to_string_lossy());
+            }
+        });
+
         settings_section(ui, tr!("settings.help"));
         if ui.button(format!("? {}", tr!("help.open"))).clicked() {
             self.open_help(None);
