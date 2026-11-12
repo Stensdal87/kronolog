@@ -1520,3 +1520,15 @@ editor.customer_exists:
 editor.err_need_project:
   da: "Kunden har ingen projekter. Skriv et første projekt."
   en: "The customer has no projects. Enter a first project."
+changelog.open:
+  da: "Hvad er nyt?"
+  en: "What's new?"
+changelog.window_title:
+  da: "KronoLog – hvad er nyt?"
+  en: "KronoLog – what's new?"
+changelog.version:
+  da: "Version %{version}"
+  en: "Version %{version}"
+changelog.close:
+  da: "Luk"
+  en: "Close"

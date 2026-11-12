@@ -1,6 +1,7 @@
 //! Brugerfladen.
 
 mod break_reminder;
+mod changelog;
 pub(crate) mod breathing;
 mod compact;
 mod forgot;
@@ -150,6 +151,8 @@ pub struct KronoLogApp {
     new_exercise: Option<breathing::NewExercise>,
     /// Hjælpevinduet (F1).
     help: Option<help::Help>,
+    /// "Hvad er nyt?"-vinduet.
+    changelog: Option<changelog::Changelog>,
     /// Ved computeren uden kørende tid siden da ("Glemt at starte tiden?").
     present_since: Option<DateTime<Local>>,
     /// Påmindelsen vises; værdien er, hvornår man kom.
@@ -282,6 +285,7 @@ impl KronoLogApp {
             decorated_frame: Default::default(),
             new_exercise: None,
             help: None,
+            changelog: None,
             backed_up_on: None,
             budget_dialog: None,
             list_message: None,
@@ -324,6 +328,7 @@ impl KronoLogApp {
         ctx.set_theme(app.data.theme.to_egui());
         if app.error.is_none() {
             app.save();
+            app.show_changelog_after_update();
             app.show_help_first_time();
         }
         app
@@ -1538,6 +1543,7 @@ impl eframe::App for KronoLogApp {
         self.restore_dialog(&ctx);
         self.item_history_window(&ctx, frame);
         self.help_window(&ctx, frame);
+        self.changelog_window(&ctx, frame);
         self.rename_dialog(&ctx);
         self.shortcuts_dialog(&ctx);
         if layout == WindowLayout::Normal && self.picker.is_some() {
@@ -2026,6 +2032,7 @@ impl KronoLogApp {
         // Vinduerne tegnes sammen med hovedvinduet og ville stå frosset.
         self.item_history = None;
         self.help = None;
+        self.changelog = None;
     }
 
     /// Stopper timeren og gemmer, inden programmet lukker.
@@ -2797,6 +2804,10 @@ impl KronoLogApp {
                 }
             }
         });
+
+        if ui.button(tr!("changelog.open")).clicked() {
+            self.open_changelog();
+        }
 
         ui.add_space(20.0);
         ui.label(RichText::new(format!("KronoLog {}", env!("CARGO_PKG_VERSION"))).weak().small());

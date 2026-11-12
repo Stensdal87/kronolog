@@ -224,6 +224,9 @@ pub struct Data {
     /// Hjælpen er vist (den åbner af sig selv første gang).
     #[serde(default)]
     pub help_seen: bool,
+    /// Versionen ved sidste start; er den en anden nu, vises "Hvad er nyt?".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_version: Option<String>,
     /// "Vidste du…?" er skjult resten af denne dag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tips_hidden_on: Option<NaiveDate>,
