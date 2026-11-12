@@ -61,6 +61,23 @@ pub struct EntryEditor {
     confirm_delete: bool,
     /// Del op i to, når den er foldet ud.
     split: Option<Split>,
+    /// "+ Ny kunde…": felterne, mens de er åbne (#37).
+    new_customer: Option<NewCustomer>,
+    /// Besked under projektet efter "Opret", f.eks. at kunden fandtes i forvejen.
+    notice: Option<String>,
+    /// Data er ændret (en kunde er oprettet), så de skal gemmes.
+    changed: bool,
+}
+
+/// "+ Ny kunde…" i vinduet: kunden oprettes med det samme med skabelonens
+/// projekter, og et af dem vælges. Er skabelonen tom, skal der også skrives et
+/// første projekt.
+#[derive(Default)]
+struct NewCustomer {
+    name: String,
+    project: String,
+    message: Option<String>,
+    focused: bool,
 }
 
 /// Hvad sluttiden regnes ud fra, når starttiden ændres.
@@ -92,6 +109,9 @@ impl EntryEditor {
             description: entry.description.clone(),
             confirm_delete: false,
             split: None,
+            new_customer: None,
+            notice: None,
+            changed: false,
         }
     }
 
@@ -123,6 +143,9 @@ impl EntryEditor {
             description: String::new(),
             confirm_delete: false,
             split: None,
+            new_customer: None,
+            notice: None,
+            changed: false,
         };
         editor.start_changed();
         editor
@@ -283,7 +306,39 @@ impl EntryEditor {
         );
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, data: &Data) -> EditorAction {
+    /// Er der oprettet en kunde, så data skal gemmes? Nulstilles ved kaldet.
+    pub fn take_changed(&mut self) -> bool {
+        std::mem::take(&mut self.changed)
+    }
+
+    /// "Opret" under "+ Ny kunde…".
+    fn create_customer(&mut self, data: &mut Data) {
+        let Some(new) = &mut self.new_customer else { return };
+        match data.add_customer_from_editor(&new.name, &new.project) {
+            Some((project_id, existed)) => {
+                let typed_project = !new.project.trim().is_empty();
+                self.project_id = Some(project_id);
+                self.notice = existed.then(|| tr!("editor.customer_exists"));
+                self.new_customer = None;
+                self.changed = !existed || typed_project;
+            }
+            None => new.message = Some(tr!("editor.err_need_project")),
+        }
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, data: &mut Data) -> EditorAction {
+        let mut create = false;
+        let action = {
+            let data: &Data = data;
+            self.show_dialog(ctx, data, &mut create)
+        };
+        if create {
+            self.create_customer(data);
+        }
+        action
+    }
+
+    fn show_dialog(&mut self, ctx: &egui::Context, data: &Data, create: &mut bool) -> EditorAction {
         let built = self.build();
         // Med "del op" foldet ud gemmes de to dele.
         let built_split = match (&built, &self.split) {
@@ -306,6 +361,69 @@ impl EntryEditor {
             egui::Grid::new("entry_fields").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                 ui.label(tr!("editor.project"));
                 self.project_combo(ui, data);
+                ui.end_row();
+
+                // Kunden findes ikke endnu (#37): opret den her.
+                ui.label("");
+                ui.vertical(|ui| {
+                    if let Some(notice) = &self.notice {
+                        ui.label(RichText::new(notice).weak().small());
+                    }
+                    match &mut self.new_customer {
+                        None => {
+                            if ui.small_button(tr!("editor.new_customer")).clicked() {
+                                self.new_customer = Some(NewCustomer::default());
+                                self.notice = None;
+                            }
+                        }
+                        Some(new) => {
+                            // Et første projekt skal skrives, hvis skabelonen er tom, eller
+                            // hvis kunden findes, men ingen projekter har.
+                            let existing = data.find_customer(&new.name);
+                            let needs_project = match existing {
+                                Some(id) => data.customer_projects(id).is_empty(),
+                                None => data.settings.customer_template.iter().all(|t| t.name.trim().is_empty()),
+                            };
+                            let mut cancel = false;
+                            ui.horizontal(|ui| {
+                                let name = ui.add(
+                                    egui::TextEdit::singleline(&mut new.name)
+                                        .hint_text(tr!("common.customer"))
+                                        .desired_width(if needs_project { 80.0 } else { 120.0 }),
+                                );
+                                if !new.focused {
+                                    name.request_focus();
+                                    new.focused = true;
+                                }
+                                let mut focused = name.has_focus();
+                                if needs_project {
+                                    let project = ui.add(
+                                        egui::TextEdit::singleline(&mut new.project)
+                                            .hint_text(tr!("editor.first_project"))
+                                            .desired_width(80.0),
+                                    );
+                                    focused |= project.has_focus();
+                                }
+                                let ready = !new.name.trim().is_empty() && (!needs_project || !new.project.trim().is_empty());
+                                *create |= ui.add_enabled(ready, egui::Button::new(tr!("editor.create")).small()).clicked();
+                                // Enter i felterne opretter; tasten tages, så den ikke også gemmer.
+                                if focused && ready && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+                                    *create = true;
+                                }
+                                cancel = ui.small_button("×").on_hover_text(tr!("common.cancel")).clicked();
+                            });
+                            let hint = match &new.message {
+                                Some(message) => RichText::new(message).small().color(ui.visuals().warn_fg_color),
+                                None if existing.is_some() => RichText::new(tr!("editor.customer_exists_hint")).weak().small(),
+                                None => RichText::new(tr!("editor.new_customer_hint")).weak().small(),
+                            };
+                            ui.label(hint);
+                            if cancel {
+                                self.new_customer = None;
+                            }
+                        }
+                    }
+                });
                 ui.end_row();
 
                 ui.label(tr!("editor.type"));
@@ -456,8 +574,11 @@ impl EntryEditor {
     }
 }
 
-/// Vælg projekt. Et slettet projekt kan stadig vælges for registreringer, der
-/// allerede ligger på det.
+/// Projektlistens største højde.
+const LIST_HEIGHT: f32 = 320.0;
+
+/// Vælg projekt, med et søgefelt øverst i listen (#34). Et slettet projekt kan
+/// stadig vælges for registreringer, der allerede ligger på det.
 fn project_combo(ui: &mut egui::Ui, data: &Data, id_salt: &str, project_id: &mut Option<Id>) {
     let selected = project_id.map_or_else(|| tr!("editor.choose_project"), |id| data.project_label(id));
     let current_deleted = project_id.filter(|id| data.project(*id).is_some_and(|p| p.deleted));
@@ -465,9 +586,80 @@ fn project_combo(ui: &mut egui::Ui, data: &Data, id_salt: &str, project_id: &mut
     ids.extend(current_deleted);
     ids.sort_by_key(|id| (!data.is_internal(*id), data.project_label(*id).to_lowercase()));
 
-    egui::ComboBox::from_id_salt(id_salt).width(200.0).selected_text(selected).show_ui(ui, |ui| {
-        for id in ids {
-            ui.selectable_value(project_id, Some(id), data.project_label(id));
+    // Søgningen huskes, mens listen er åben, og nulstilles, når den lukker.
+    let search_id = ui.make_persistent_id((id_salt, "search"));
+    let (mut search, focused) = ui.ctx().data(|d| d.get_temp::<(String, bool)>(search_id)).unwrap_or_default();
+    let is_match = |id: &Id, search: &str| {
+        let query = search.trim().to_lowercase();
+        query.is_empty() || data.project_label(*id).to_lowercase().contains(&query)
+    };
+
+    // Listen følger træfferne: egui krymper den selv, men dens område husker
+    // størrelsen og kan ikke vokse ud over den. Er der kommet flere træf end i
+    // sidste billede (søgningen er kortet eller slettet), får området igen
+    // højden fra da hele listen blev vist; indholdet bestemmer så højden.
+    // Ikke mere end det: popuppen vælger at åbne over feltet, hvis den tror,
+    // den er for høj til pladsen under, og hoppede så op et øjeblik.
+    let popup_id = ui.make_persistent_id(egui::IdSalt::new(id_salt)).with("popup");
+    let (count_id, full_id) = (search_id.with("count"), search_id.with("full"));
+    let count = ids.iter().filter(|id| is_match(id, &search)).count();
+    let last_count = ui.ctx().data(|d| d.get_temp::<usize>(count_id));
+    let area = egui::AreaState::load(ui.ctx(), popup_id);
+    let area_height = area.and_then(|a| a.size).map(|s| s.y);
+    // Højden med hele listen, målt mens den blev vist.
+    if last_count == Some(ids.len())
+        && let Some(height) = area_height
+    {
+        ui.ctx().data_mut(|d| d.insert_temp(full_id, height));
+    }
+    let full_height = ui.ctx().data(|d| d.get_temp::<f32>(full_id));
+    if last_count.is_some_and(|last| count > last)
+        && let (Some(mut state), Some(full)) = (area, full_height)
+        && let Some(size) = state.size
+    {
+        state.size = Some(Vec2::new(size.x, full));
+        ui.ctx().memory_mut(|m| m.areas_mut().set_state(egui::LayerId::new(egui::Order::Foreground, popup_id), state));
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(count_id, count));
+    let shown = egui::ComboBox::from_id_salt(id_salt)
+        .width(200.0)
+        .height(LIST_HEIGHT)
+        .selected_text(selected)
+        // Ellers lukker et klik i søgefeltet listen; den lukkes ved valg i stedet.
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show_ui(ui, |ui| {
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text(tr!("common.search_hint"))
+                    .desired_width(f32::INFINITY),
+            );
+            if !focused {
+                field.request_focus();
+            }
+            let matches: Vec<Id> = ids.iter().copied().filter(|id| is_match(id, &search)).collect();
+            if matches.is_empty() {
+                ui.label(RichText::new(tr!("picker.no_match")).weak());
+            }
+            for id in &matches {
+                if ui.selectable_label(*project_id == Some(*id), data.project_label(*id)).clicked() {
+                    *project_id = Some(*id);
+                    ui.close();
+                }
+            }
+            // Enter vælger det eneste træf. Tasten tages, så den ikke også gemmer registreringen.
+            if matches.len() == 1 && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+                *project_id = Some(matches[0]);
+                ui.close();
+            }
+        });
+    ui.ctx().data_mut(|d| match shown.inner {
+        Some(()) => {
+            d.insert_temp(search_id, (search, true));
+        }
+        None => {
+            d.remove::<(String, bool)>(search_id);
+            d.remove::<usize>(count_id);
+            d.remove::<f32>(full_id);
         }
     });
 }
@@ -659,6 +851,72 @@ mod tests {
         assert_eq!(data.entries.len(), 5);
         assert_eq!(data.entries[3].end, at);
         assert_eq!(data.entries[4].start, at);
+    }
+
+    /// Projektlistens højde gennem en søgning: (søgning, højde) pr. billede,
+    /// målt uden vindue med egui alene.
+    fn list_heights(searches: &[&str]) -> Vec<(String, f32)> {
+        list_rects(searches, 800.0).into_iter().map(|(s, r)| (s, r.height())).collect()
+    }
+
+    /// Som `list_heights`, men hele popuppens placering, på en skærm med højden `screen`.
+    fn list_rects(searches: &[&str], screen: f32) -> Vec<(String, egui::Rect)> {
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        for i in 0..6 {
+            data.add_project(c, &format!("Projekt {i}"));
+        }
+        data.add_project(c, "Hotline");
+        data.add_project(c, "Hotel");
+        let ctx = egui::Context::default();
+        let mut project_id = None;
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(400.0, screen))),
+            ..Default::default()
+        };
+        searches
+            .iter()
+            .map(|search| {
+                let mut popup = egui::Id::NULL;
+                let output = ctx.run_ui(input(), |ui| {
+                    popup = ui.make_persistent_id(egui::IdSalt::new("t")).with("popup");
+                    egui::Popup::open_id(ui.ctx(), popup);
+                    let search_id = ui.make_persistent_id(("t", "search"));
+                    ui.ctx().data_mut(|d| d.insert_temp(search_id, (search.to_string(), true)));
+                    project_combo(ui, &data, "t", &mut project_id);
+                });
+                output.drop_without_applying_deltas();
+                (search.to_string(), ctx.memory(|m| m.area_rect(popup)).unwrap_or(egui::Rect::NOTHING))
+            })
+            .collect()
+    }
+
+    /// Højden følger træfferne præcis (uden en ekstra tom linje) og vokser
+    /// tilbage, når søgningen slettes. 8 projekter, "hot" giver 2, "hotl" 1.
+    #[test]
+    fn project_list_stays_below_the_field_while_searching() {
+        // En lav skærm: hele listen er der lige plads til under feltet.
+        let rects = list_rects(&["", "", "hotl", "hotl", "", "", "", "hot", "", ""], 450.0);
+        let top = rects[1].1.top();
+        assert!(rects.iter().skip(1).all(|(_, r)| r.top() == top), "popuppen hopper ikke: {rects:?}");
+        assert_eq!(rects.last().unwrap().1.height(), rects[1].1.height(), "fuld højde igen");
+
+        // Lige akkurat plads til hele listen under feltet.
+        let tight = list_rects(&["", "", "hotl", "hotl", "", "", "hot", "", ""], 20.0 + rects[1].1.height() + 4.0);
+        let top = tight[1].1.top();
+        assert!(tight.iter().skip(1).all(|(_, r)| r.top() == top), "heller ikke på en lav skærm: {tight:?}");
+    }
+
+    #[test]
+    fn project_list_height_follows_the_search() {
+        let h = list_heights(&["", "", "hot", "hot", "hotl", "hotl", "", "", "zzz", "zzz"]);
+        let height = |i: usize| h[i].1;
+        let (full, two, one, none) = (height(1), height(3), height(5), height(9));
+        let row = two - one;
+        assert!(row > 10.0 && row < 40.0, "én linje: {h:?}");
+        assert!((full - one - 7.0 * row).abs() < 0.5, "hver linje lige høj, ingen ekstra: {h:?}");
+        assert_eq!(height(7), full, "tilbage til fuld størrelse, når søgningen slettes: {h:?}");
+        assert!(none < one, "uden træf kun feltet og beskeden: {h:?}");
     }
 
     #[test]

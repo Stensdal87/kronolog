@@ -136,12 +136,19 @@ impl KronoLogApp {
     fn item_history_dialogs(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
         let always_on_top = self.always_on_top;
         let Some(history) = self.item_history.as_mut() else { return };
-        if let Some(editor) = history.editor.as_mut()
-            && editor.show(ctx, &self.data).apply(&mut self.data)
-        {
-            history.editor = None;
-            self.save();
-            return;
+        if let Some(editor) = history.editor.as_mut() {
+            let action = editor.show(ctx, &mut self.data);
+            let changed = editor.take_changed();
+            if action.apply(&mut self.data) {
+                history.editor = None;
+                self.save();
+                return;
+            }
+            // En kunde oprettet i vinduet gemmes med det samme. (`self.save()` kan
+            // ikke kaldes her, mens registreringsvinduet er lånt.)
+            if changed && let Err(e) = self.data.save(&self.path) {
+                self.error = Some(e);
+            }
         }
         if let Some(export) = history.export.as_mut()
             && !export.show(ctx, &self.data, frame, always_on_top)

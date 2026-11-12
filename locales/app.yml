@@ -1206,8 +1206,8 @@ help.history:
   da: "Historik og rettelser"
   en: "History and corrections"
 help.history_body:
-  da: "• 📅 Historik viser én dag ad gangen. Skift dag med pilene øverst.\n• Summeret viser tiden pr. projekt. Klik på ⏵ for at se dagens registreringer for projektet.\n• Klik på en registrering for at rette tid, projekt, type eller note. Der kan du også slette den.\n• ✂ Del op i rettevinduet deler en registrering i to, f.eks. hvis du glemte at skifte projekt.\n• ➕ tilføjer en registrering, du har glemt. ⏷ ved tiden viser hver halve time, og \"min\" er varigheden.\n• Under Alle står huller i dagen med orange: \"+ Ikke registreret\". Klik for at udfylde hullet.\n• Uge viser ugen som et timeregnskab med afrundet tid pr. projekt og dag. Klik på en tid for at krydse den af."
-  en: "• 📅 History shows one day at a time. Change day with the arrows at the top.\n• Summary shows the time per project. Click ⏵ to see the day's entries for the project.\n• Click an entry to change its time, project, type or note. You can also delete it there.\n• ✂ Split in the edit window splits an entry in two, e.g. if you forgot to switch project.\n• ➕ adds an entry you forgot. ⏷ next to the time lists every half hour, and \"min\" is the duration.\n• Under All, gaps in the day are shown in orange: \"+ Not recorded\". Click to fill the gap.\n• Week shows the week as a timesheet with rounded time per project and day. Click a time to tick it off."
+  da: "• 📅 Historik viser én dag ad gangen. Skift dag med pilene øverst.\n• Summeret viser tiden pr. projekt. Klik på ⏵ for at se dagens registreringer for projektet.\n• Klik på en registrering for at rette tid, projekt, type eller note. Der kan du også slette den.\n• ✂ Del op i rettevinduet deler en registrering i to, f.eks. hvis du glemte at skifte projekt.\n• ➕ tilføjer en registrering, du har glemt. ⏷ ved tiden viser hver halve time, og \"min\" er varigheden. Projektlisten kan søges i, og \"+ Ny kunde…\" opretter kunden med skabelonens projekter med det samme.\n• Under Alle står huller i dagen med orange: \"+ Ikke registreret\". Klik for at udfylde hullet.\n• Uge viser ugen som et timeregnskab med afrundet tid pr. projekt og dag. Klik på en tid for at krydse den af."
+  en: "• 📅 History shows one day at a time. Change day with the arrows at the top.\n• Summary shows the time per project. Click ⏵ to see the day's entries for the project.\n• Click an entry to change its time, project, type or note. You can also delete it there.\n• ✂ Split in the edit window splits an entry in two, e.g. if you forgot to switch project.\n• ➕ adds an entry you forgot. ⏷ next to the time lists every half hour, and \"min\" is the duration. The project list can be searched, and \"+ New customer…\" creates the customer with the template's projects right away.\n• Under All, gaps in the day are shown in orange: \"+ Not recorded\". Click to fill the gap.\n• Week shows the week as a timesheet with rounded time per project and day. Click a time to tick it off."
 help.billing:
   da: "Afrunding og afkrydsning"
   en: "Rounding and ticking off"
@@ -1490,3 +1490,33 @@ tips.share:
 goal.days_hint:
   da: "Timer pr. ugedag. 0:00 betyder intet mål den dag."
   en: "Hours per weekday. 0:00 means no goal that day."
+call.note_hint:
+  da: "📝 Note til opkaldet…"
+  en: "📝 Note for the call…"
+day.project_week:
+  da: "Projekt denne uge"
+  en: "Project this week"
+day.project_toggle_hint:
+  da: "Klik for at skifte mellem i alt og denne uge"
+  en: "Click to switch between total and this week"
+editor.new_customer:
+  da: "+ Ny kunde…"
+  en: "+ New customer…"
+editor.first_project:
+  da: "Første projekt"
+  en: "First project"
+editor.create:
+  da: "Opret"
+  en: "Create"
+editor.new_customer_hint:
+  da: "Kunden oprettes med det samme med projekterne fra ☰ → Nye kunder."
+  en: "The customer is created right away with the projects from ☰ → New customers."
+editor.customer_exists_hint:
+  da: "Kunden findes allerede; Opret vælger den."
+  en: "The customer already exists; Create selects it."
+editor.customer_exists:
+  da: "Kunden fandtes allerede, så dens projekt er valgt."
+  en: "The customer already existed, so its project is selected."
+editor.err_need_project:
+  da: "Kunden har ingen projekter. Skriv et første projekt."
+  en: "The customer has no projects. Enter a first project."

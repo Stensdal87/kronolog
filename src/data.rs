@@ -240,6 +240,9 @@ pub struct Data {
     /// Menuen ved siden af uret (dagens tid, projektets samlede tid) er åben.
     #[serde(default)]
     pub day_panel_open: bool,
+    /// Menuen viser projektets tid denne uge i stedet for i alt (#38).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub day_panel_week: bool,
 }
 
 /// Brugerens indstillinger (menuen ☰).
@@ -620,6 +623,44 @@ impl Data {
             }
         }
         (customer, auto_start)
+    }
+
+    /// Den (ikke slettede) kunde med navnet, uden hensyn til store/små bogstaver.
+    pub fn find_customer(&self, name: &str) -> Option<Id> {
+        let name = name.trim();
+        self.visible_customers().find(|c| same_name(&c.name, name)).map(|c| c.id)
+    }
+
+    /// "+ Ny kunde…" i ret-vinduet (#37): opretter kunden med skabelonens
+    /// projekter (uden at starte noget) og giver projektet, der skal vælges:
+    /// det med auto start, ellers det første. `first_project` bruges, når
+    /// skabelonen er tom (eller kunden findes uden projekter). Findes kunden,
+    /// oprettes den ikke igen. Giver (projekt, om kunden fandtes), eller `None`
+    /// hvis der ikke er noget projekt at vælge.
+    pub fn add_customer_from_editor(&mut self, name: &str, first_project: &str) -> Option<(Id, bool)> {
+        let (name, first) = (name.trim(), first_project.trim());
+        if name.is_empty() {
+            return None;
+        }
+        // Ingen skabelon og intet første projekt: opret ikke en kunde uden projekter.
+        let template_empty = self.settings.customer_template.iter().all(|t| t.name.trim().is_empty());
+        if first.is_empty() && template_empty && self.find_customer(name).is_none() {
+            return None;
+        }
+        let (customer, existed, auto_start) = match self.find_customer(name) {
+            Some(id) => (id, true, None),
+            None => {
+                let (id, auto_start) = self.create_customer(name);
+                (id, false, auto_start)
+            }
+        };
+        if !first.is_empty() {
+            let existing =
+                self.visible_projects().find(|p| p.customer_id == customer && same_name(&p.name, first)).map(|p| p.id);
+            return Some((existing.unwrap_or_else(|| self.add_project(customer, first)), existed));
+        }
+        let pick = auto_start.or_else(|| self.customer_projects(customer).first().map(|p| p.id))?;
+        Some((pick, existed))
     }
 
     /// Flytter den kørende tidstagning til et andet projekt uden at nulstille
@@ -1093,6 +1134,14 @@ impl Data {
             .chain(self.running_entry())
             .filter(|e| e.start < entry.end && entry.start < e.end)
             .collect()
+    }
+
+    /// Projektets tid i ugen med `date` (mandag til og med `date`), inkl. den aktive timer.
+    pub fn project_week_total(&self, project_id: Id, date: NaiveDate) -> Duration {
+        let monday = date - Duration::days(date.weekday().num_days_from_monday() as i64);
+        (0..=date.weekday().num_days_from_monday() as i64)
+            .map(|d| self.project_day_total(monday + Duration::days(d), project_id))
+            .fold(Duration::zero(), |sum, d| sum + d)
     }
 
     /// Al tid brugt på et projekt nogensinde, inkl. den aktive timer.
@@ -1860,6 +1909,53 @@ mod tests {
         assert!(loaded.active.is_none());
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].duration(), Duration::minutes(30));
+    }
+
+    #[test]
+    fn customer_from_the_entry_editor_gets_the_template() {
+        let mut data = Data::default();
+        // Uden skabelon skal der et første projekt til.
+        assert_eq!(data.add_customer_from_editor("Acme", ""), None);
+        assert!(data.find_customer("Acme").is_none(), "ingen tom kunde");
+        let (web, existed) = data.add_customer_from_editor("Acme", "Web").unwrap();
+        assert!(!existed);
+        assert_eq!(data.project_label(web), "Acme / Web");
+
+        data.settings.customer_template = vec![
+            TemplateProject { name: "Support".into(), auto_start: false },
+            TemplateProject { name: "Hotline".into(), auto_start: true },
+        ];
+        let (picked, _) = data.add_customer_from_editor("Ny", "").unwrap();
+        assert_eq!(data.project_label(picked), "Ny / Hotline", "projektet med auto start vælges");
+        assert!(data.active.is_none(), "men tiden startes ikke");
+        assert_eq!(data.customer_projects(data.find_customer("Ny").unwrap()).len(), 2);
+
+        data.settings.customer_template[1].auto_start = false;
+        let (picked, _) = data.add_customer_from_editor("Tredje", "").unwrap();
+        assert_eq!(data.project_label(picked), "Tredje / Hotline", "ellers det første i listen (sorteret efter navn)");
+
+        // Findes kunden, oprettes den ikke igen.
+        let customers = data.customers.len();
+        let (picked, existed) = data.add_customer_from_editor(" ny ", "").unwrap();
+        assert!(existed);
+        assert_eq!(data.customers.len(), customers);
+        assert_eq!(data.project_label(picked).split(" / ").next(), Some("Ny"));
+    }
+
+    #[test]
+    fn project_time_this_week_counts_from_monday() {
+        let mut data = Data::default();
+        let c = data.add_customer("K");
+        let p = data.add_project(c, "A");
+        let at = |day, h| Local.with_ymd_and_hms(2026, 11, day, h, 0, 0).unwrap();
+        // Søndag 8. (forrige uge), mandag 9. og onsdag 11.
+        for day in [8, 9, 11] {
+            data.entries.push(TimeEntry { project_id: p, start: at(day, 8), end: at(day, 10), ..Default::default() });
+        }
+        let thursday = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        assert_eq!(data.project_week_total(p, thursday), Duration::hours(4));
+        let tuesday = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+        assert_eq!(data.project_week_total(p, tuesday), Duration::hours(2), "kun til og med dagen");
     }
 
     #[test]

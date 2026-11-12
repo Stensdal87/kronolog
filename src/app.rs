@@ -596,7 +596,9 @@ impl KronoLogApp {
         let mut toggle_favorite = None;
         let mut edit_budget = None;
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        // Fuld bredde, så rullebjælken bliver i højre side, også når alle
+        // kunder er klappet sammen, og listen er smal (#35).
+        egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
             let mut any_match = false;
             // ⭐ Favoritter øverst (ikke under søgning, hvor listen viser træffere).
             let favorites = self.data.favorites();
@@ -808,7 +810,12 @@ impl KronoLogApp {
         let today = Local::now().date_naive();
         let day_total = self.data.day_total(today);
         let rounded = self.data.rounded_day_total(today);
-        let project_total = self.data.active.as_ref().and_then(|a| a.project_id).map(|id| self.data.project_total(id));
+        // Projektets tid i alt eller denne uge; et klik i menuen skifter (#38).
+        let week = self.data.day_panel_week;
+        let project_total = self.data.active.as_ref().and_then(|a| a.project_id).map(|id| {
+            if week { self.data.project_week_total(id, today) } else { self.data.project_total(id) }
+        });
+        let project_heading = format!("{} ⇄", if week { tr!("day.project_week") } else { tr!("day.project_total") });
 
         // Menuens tekster; menuen er præcis så bred som den længste, så uret og
         // menuen kan centreres sammen.
@@ -829,7 +836,7 @@ impl KronoLogApp {
             panel_texts.push((text.clone(), small.clone()));
         }
         if let Some(total) = project_total {
-            panel_texts.push((tr!("day.project_total"), small.clone()));
+            panel_texts.push((project_heading.clone(), small.clone()));
             panel_texts.push((format_duration(total), egui::FontId::monospace(13.0)));
         }
         let text_width = panel_texts
@@ -949,7 +956,11 @@ impl KronoLogApp {
             }
             if let Some(total) = project_total {
                 panel.add_space(8.0);
-                panel.label(RichText::new(tr!("day.project_total")).weak().small());
+                let heading = egui::Button::new(RichText::new(&project_heading).weak().small()).frame(false);
+                if panel.add(heading).on_hover_text(tr!("day.project_toggle_hint")).clicked() {
+                    self.data.day_panel_week = !week;
+                    self.save();
+                }
                 panel.label(RichText::new(format_duration(total)).monospace().size(13.0));
             }
         }
@@ -1338,7 +1349,12 @@ impl KronoLogApp {
 
     fn entry_editor(&mut self, ctx: &egui::Context) {
         let Some(editor) = self.editor.as_mut() else { return };
-        if !editor.show(ctx, &self.data).apply(&mut self.data) {
+        let action = editor.show(ctx, &mut self.data);
+        // En kunde oprettet i vinduet gemmes med det samme (også ved Annuller).
+        if editor.take_changed() {
+            self.save();
+        }
+        if !action.apply(&mut self.data) {
             return;
         }
         self.editor = None;
@@ -1631,6 +1647,8 @@ impl KronoLogApp {
     fn call_dialog(&mut self, ctx: &egui::Context) {
         let call = self.data.unassigned[0].clone();
         let mut target = call.target.clone();
+        // Noten fra under opkaldet; kan skrives eller rettes her (#36).
+        let mut description = call.description.clone();
         let internal = self.data.internal_project_id();
         let internal_name = self.data.project(internal).map_or_else(String::new, |p| p.name.clone());
         let mut confirm = false;
@@ -1690,6 +1708,12 @@ impl KronoLogApp {
             ui.label(RichText::new(tr!("call.or_type")).weak());
             typed_target_fields(ui, &mut target);
             ui.add_space(4.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut description)
+                    .hint_text(tr!("call.note_hint"))
+                    .desired_width(f32::INFINITY),
+            );
+            ui.add_space(4.0);
 
             let complete = self.data.target_is_complete(&target);
             ui.horizontal(|ui| {
@@ -1719,8 +1743,9 @@ impl KronoLogApp {
         if modal.should_close() {
             self.call_dialog_open = false;
         }
-        if target != call.target {
+        if target != call.target || description != call.description {
             self.data.unassigned[0].target = target;
+            self.data.unassigned[0].description = description;
             self.save();
         }
         if confirm && self.data.register_first_unassigned() {
