@@ -6,6 +6,7 @@ under Settings → "What's new?".
 ## 1.3.0
 
 - Experimental: when the phone is taken automatically on Windows, the name from the Teams call window is written in the note. The window titles are also written to the call log. Can be turned off under ☰ → Calls
+- When several calls are waiting, you can check them and register them all on the same project at once. Each call keeps its own note
 
 ## 1.2.0 (2026-11-12)
 

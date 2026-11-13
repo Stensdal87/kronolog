@@ -1041,6 +1041,7 @@ impl Data {
 
     /// Registrerer det første ikke-registrerede opkald på det mål, der er udfyldt
     /// i det. Returnerer false hvis målet ikke er udfyldt.
+    #[cfg(test)]
     pub fn register_first_unassigned(&mut self) -> bool {
         let Some(call) = self.unassigned.first().cloned() else {
             return false;
@@ -1052,9 +1053,37 @@ impl Data {
         registered
     }
 
-    pub fn discard_first_unassigned(&mut self) {
-        if !self.unassigned.is_empty() {
-            self.unassigned.remove(0);
+    /// Registrerer flere ventende opkald på samme mål; hvert beholder sin note.
+    /// Returnerer antallet, der blev registreret.
+    pub fn register_unassigned(&mut self, indices: &[usize], target: &CallTarget) -> usize {
+        if !self.target_is_complete(target) {
+            return 0;
+        }
+        let mut indices = indices.to_vec();
+        indices.sort_unstable();
+        indices.dedup();
+        let mut done = Vec::new();
+        for index in indices {
+            let Some(mut call) = self.unassigned.get(index).cloned() else { continue };
+            call.target = target.clone();
+            if self.register_call(&call) {
+                done.push(index);
+            }
+        }
+        for &index in done.iter().rev() {
+            self.unassigned.remove(index);
+        }
+        done.len()
+    }
+
+    pub fn discard_unassigned(&mut self, indices: &[usize]) {
+        let mut indices = indices.to_vec();
+        indices.sort_unstable();
+        indices.dedup();
+        for index in indices.into_iter().rev() {
+            if index < self.unassigned.len() {
+                self.unassigned.remove(index);
+            }
         }
     }
 
@@ -1436,6 +1465,33 @@ mod tests {
         assert!(data.unassigned.is_empty());
         assert_eq!(data.entries[0].project_id, internal);
         assert_eq!(data.entries[0].note.as_deref(), Some(NOTE_PHONE));
+    }
+
+    #[test]
+    fn several_waiting_calls_go_to_the_same_project_with_their_own_notes() {
+        let mut data = Data::default();
+        let start = Local::now() - Duration::hours(3);
+        for (i, note) in ["Anna", "Bo", "Carl"].into_iter().enumerate() {
+            let start = start + Duration::minutes(30 * i as i64);
+            data.unassigned.push(UnassignedEntry {
+                start,
+                end: start + Duration::minutes(5),
+                target: CallTarget::default(),
+                description: note.to_owned(),
+            });
+        }
+        let typed = CallTarget { customer: "Ny kunde".into(), project: "Support".into(), ..Default::default() };
+        assert_eq!(data.register_unassigned(&[0, 2], &CallTarget::default()), 0, "intet mål");
+        assert_eq!(data.register_unassigned(&[2, 0], &typed), 2);
+        assert_eq!(data.unassigned.len(), 1);
+        assert_eq!(data.unassigned[0].description, "Bo", "det fravalgte venter stadig");
+        assert_eq!(data.entries.len(), 2);
+        assert_eq!(data.entries[0].project_id, data.entries[1].project_id, "kunden oprettes kun én gang");
+        let notes: Vec<&str> = data.entries.iter().map(|e| e.description.as_str()).collect();
+        assert_eq!(notes, ["Anna", "Carl"]);
+
+        data.discard_unassigned(&[0, 5]);
+        assert!(data.unassigned.is_empty());
     }
 
     #[test]

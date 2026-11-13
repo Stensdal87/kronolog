@@ -105,6 +105,9 @@ pub struct KronoLogApp {
     /// Søgefelter i projektlisten og i opkaldsdialogen.
     search: String,
     dialog_search: String,
+    /// De ventende opkald, der er valgt i opkaldsdialogen (efter starttid), så
+    /// flere kan registreres på samme projekt på én gang.
+    calls_selected: Vec<DateTime<Local>>,
     /// "Udfold alle"/"Sammenklap alle" anvendes på kunderne i næste frame.
     set_all_open: Option<bool>,
     /// Kunde eller projekt der venter på bekræftelse af sletning.
@@ -261,6 +264,7 @@ impl KronoLogApp {
             seen_unassigned: 0,
             search: String::new(),
             dialog_search: String::new(),
+            calls_selected: Vec::new(),
             set_all_open: None,
             confirm_delete: None,
             rename: None,
@@ -1657,7 +1661,15 @@ impl KronoLogApp {
     /// Enter registrerer (når et mål er udfyldt), Esc lukker dialogen uden at
     /// miste opkaldet.
     fn call_dialog(&mut self, ctx: &egui::Context) {
-        let call = self.data.unassigned[0].clone();
+        // De valgte opkald; som standard det ældste.
+        let waiting: Vec<DateTime<Local>> = self.data.unassigned.iter().map(|c| c.start).collect();
+        self.calls_selected.retain(|start| waiting.contains(start));
+        if self.calls_selected.is_empty() {
+            self.calls_selected.push(waiting[0]);
+        }
+        let mut selected = self.calls_selected.clone();
+        let first = waiting.iter().position(|start| selected.contains(start)).unwrap_or(0);
+        let call = self.data.unassigned[first].clone();
         let mut target = call.target.clone();
         // Noten fra under opkaldet; kan skrives eller rettes her (#36).
         let mut description = call.description.clone();
@@ -1669,15 +1681,50 @@ impl KronoLogApp {
         let modal = egui::Modal::new(egui::Id::unique("call_dialog")).show(ctx, |ui| {
             ui.set_width(270.0);
             ui.heading(tr!("common.phone_call"));
-            ui.label(format!(
-                "{}  {}–{}  ({})",
-                call.start.format("%d-%m"),
-                call.start.format("%H:%M"),
-                call.end.format("%H:%M"),
-                format_duration(call.duration()),
-            ));
-            if self.data.unassigned.len() > 1 {
-                ui.label(RichText::new(tr!("call.more_waiting", count = self.data.unassigned.len() - 1)).weak());
+            let when = |c: &crate::data::UnassignedEntry| {
+                format!(
+                    "{}  {}–{}  ({})",
+                    c.start.format("%d-%m"),
+                    c.start.format("%H:%M"),
+                    c.end.format("%H:%M"),
+                    format_duration(c.duration()),
+                )
+            };
+            if self.data.unassigned.len() == 1 {
+                ui.label(when(&call));
+            } else {
+                // Flere venter: vælg dem, der skal på samme projekt.
+                ui.horizontal_top(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                        let all = selected.len() == waiting.len();
+                        let label = if all { tr!("call.select_none") } else { tr!("call.select_all") };
+                        if ui.small_button(label).clicked() {
+                            selected = if all { vec![waiting[0]] } else { waiting.clone() };
+                        }
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                            let text = tr!("call.pick_calls", count = self.data.unassigned.len());
+                            ui.add(egui::Label::new(RichText::new(text).weak()).wrap());
+                        });
+                    });
+                });
+                egui::ScrollArea::vertical().id_salt("waiting_calls").max_height(110.0).show(ui, |ui| {
+                    for waiting_call in &self.data.unassigned {
+                        let mut checked = selected.contains(&waiting_call.start);
+                        let mut text = when(waiting_call);
+                        if !waiting_call.description.is_empty() {
+                            text = format!("{text}  {}", waiting_call.description);
+                        }
+                        let response = ui.checkbox(&mut checked, text);
+                        if response.changed() {
+                            if checked {
+                                selected.push(waiting_call.start);
+                            } else {
+                                selected.retain(|s| *s != waiting_call.start);
+                            }
+                        }
+                    }
+                });
+                ui.separator();
             }
             ui.label(tr!("call.where"));
             ui.separator();
@@ -1720,24 +1767,35 @@ impl KronoLogApp {
             ui.label(RichText::new(tr!("call.or_type")).weak());
             typed_target_fields(ui, &mut target);
             ui.add_space(4.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut description)
-                    .hint_text(tr!("call.note_hint"))
-                    .desired_width(f32::INFINITY),
-            );
+            let count = selected.len();
+            if count <= 1 {
+                ui.add(
+                    egui::TextEdit::singleline(&mut description)
+                        .hint_text(tr!("call.note_hint"))
+                        .desired_width(f32::INFINITY),
+                );
+            } else {
+                ui.label(RichText::new(tr!("call.own_notes")).weak());
+            }
             ui.add_space(4.0);
 
-            let complete = self.data.target_is_complete(&target);
+            let complete = self.data.target_is_complete(&target) && count > 0;
             ui.horizontal(|ui| {
+                let register = if count > 1 { tr!("call.register_many", count = count) } else { tr!("call.register") };
                 confirm |= ui
-                    .add_enabled(complete, egui::Button::new(tr!("call.register")))
+                    .add_enabled(complete, egui::Button::new(register))
                     .on_hover_text("Enter")
                     .clicked();
                 if ui.button(tr!("call.later")).on_hover_text("Esc").clicked() {
                     ui.close();
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(tr!("call.discard")).on_hover_text(tr!("call.discard_hint")).clicked() {
+                    let (label, hint) = if count > 1 {
+                        (tr!("call.discard_many", count = count), tr!("call.discard_many_hint"))
+                    } else {
+                        (tr!("call.discard"), tr!("call.discard_hint"))
+                    };
+                    if ui.add_enabled(count > 0, egui::Button::new(label)).on_hover_text(hint).clicked() {
                         discard = true;
                     }
                 });
@@ -1749,25 +1807,30 @@ impl KronoLogApp {
                 }
                 confirm = true;
             }
-            confirm &= self.data.target_is_complete(&target);
+            confirm &= self.data.target_is_complete(&target) && !selected.is_empty();
         });
 
         if modal.should_close() {
             self.call_dialog_open = false;
         }
         if target != call.target || description != call.description {
-            self.data.unassigned[0].target = target;
-            self.data.unassigned[0].description = description;
+            self.data.unassigned[first].target = target.clone();
+            self.data.unassigned[first].description = description;
             self.save();
         }
-        if confirm && self.data.register_first_unassigned() {
+        let indices: Vec<usize> =
+            waiting.iter().enumerate().filter(|(_, start)| selected.contains(start)).map(|(i, _)| i).collect();
+        if confirm && self.data.register_unassigned(&indices, &target) > 0 {
             self.dialog_search.clear();
+            selected.clear();
             self.save();
         } else if discard {
-            self.data.discard_first_unassigned();
+            self.data.discard_unassigned(&indices);
             self.dialog_search.clear();
+            selected.clear();
             self.save();
         }
+        self.calls_selected = selected;
     }
 
     /// Omdøb en kunde eller et projekt. Enter gemmer, Esc annullerer.

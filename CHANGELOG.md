@@ -6,6 +6,7 @@ under Indstillinger → "Hvad er nyt?".
 ## 1.3.0
 
 - Forsøg: når telefonen tages automatisk på Windows, skrives navnet fra Teams' opkaldsvindue i noten. Titlerne på vinduerne skrives også i opkaldsloggen. Kan slås fra under ☰ → Opkald
+- Venter flere opkald, kan du sætte flueben ved dem og registrere dem alle på samme projekt på én gang. Hvert opkald beholder sin egen note
 
 ## 1.2.0 (2026-11-12)
 

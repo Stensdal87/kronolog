@@ -1538,3 +1538,24 @@ settings.call_name:
 settings.call_name_hint:
   da: "Forsøg: titlen på Teams' opkaldsvindue er ofte navnet på den, du taler med. Kun Windows. Titlerne skrives i opkaldsloggen."
   en: "Experimental: the title of the Teams call window is often the name of the person you are talking to. Windows only. The titles are written to the call log."
+call.pick_calls:
+  da: "%{count} opkald venter. Vælg dem, der skal på samme projekt:"
+  en: "%{count} calls are waiting. Pick the ones for the same project:"
+call.select_all:
+  da: "Vælg alle"
+  en: "Select all"
+call.select_none:
+  da: "Fravælg"
+  en: "Deselect"
+call.own_notes:
+  da: "Hvert opkald beholder sin egen note."
+  en: "Each call keeps its own note."
+call.register_many:
+  da: "✔ Registrér %{count} opkald"
+  en: "✔ Register %{count} calls"
+call.discard_many:
+  da: "🗑 Kassér %{count}"
+  en: "🗑 Discard %{count}"
+call.discard_many_hint:
+  da: "De valgte opkald registreres ikke"
+  en: "The selected calls are not registered"
