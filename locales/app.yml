@@ -1200,8 +1200,8 @@ help.pause:
   da: "Pause og telefon"
   en: "Breaks and phone calls"
 help.pause_body:
-  da: "• ☕ Pause registrerer tiden på Intern tid. ▶ Fortsæt går tilbage til projektet, hvor du slap.\n• 📞 Telefon starter tid på et opkald. Når det slutter, vælger du, hvor tiden skal hen, og tiden fortsætter på det forrige projekt.\n• Under ☰ → Opkald kan KronoLog tage telefonen af sig selv, når f.eks. Teams bruger mikrofonen."
-  en: "• ☕ Break records the time on Internal time. ▶ Resume goes back to the project where you left off.\n• 📞 Phone starts time on a call. When it ends, you choose where the time goes, and time continues on the previous project.\n• Under ☰ → Calls, KronoLog can start a phone call by itself when e.g. Teams uses the microphone."
+  da: "• ☕ Pause registrerer tiden på Intern tid. ▶ Fortsæt går tilbage til projektet, hvor du slap.\n• 📞 Telefon starter tid på et opkald. Når det slutter, vælger du, hvor tiden skal hen, og tiden fortsætter på det forrige projekt.\n• Under ☰ → Opkald kan KronoLog tage telefonen af sig selv, når f.eks. Teams bruger mikrofonen. På Windows kan navnet fra Teams' opkaldsvindue komme i noten (forsøg).\n• Venter flere opkald, kan du sætte flueben ved dem og registrere dem på samme projekt på én gang. Hvert opkald beholder sin note."
+  en: "• ☕ Break records the time on Internal time. ▶ Resume goes back to the project where you left off.\n• 📞 Phone starts time on a call. When it ends, you choose where the time goes, and time continues on the previous project.\n• Under ☰ → Calls, KronoLog can start a phone call by itself when e.g. Teams uses the microphone. On Windows, the name from the Teams call window can go in the note (experimental).\n• When several calls are waiting, you can check them and register them on the same project at once. Each call keeps its note."
 help.history:
   da: "Historik og rettelser"
   en: "History and corrections"
@@ -1254,8 +1254,8 @@ help.tray:
   da: "Systembakke og opdateringer"
   en: "System tray and updates"
 help.tray_body:
-  da: "• Lukker du vinduet, lægger KronoLog sig i systembakken, og tiden kører videre. Klik på ikonet for at vise vinduet; højreklik for en menu.\n• Den røde prik på ikonet viser, at tiden kører.\n• KronoLog søger selv efter nye versioner og viser et banner, når der er en (☰ → Opdateringer).\n• Hver dag gemmes en sikkerhedskopi af dine data; de sidste 14 dage kan gendannes under ☰ → Sikkerhedskopi."
-  en: "• If you close the window, KronoLog goes to the system tray and the time keeps running. Click the icon to show the window; right-click for a menu.\n• The red dot on the icon shows that time is running.\n• KronoLog checks for new versions by itself and shows a banner when there is one (☰ → Updates).\n• A backup of your data is saved every day; the last 14 days can be restored under ☰ → Backup."
+  da: "• Lukker du vinduet, lægger KronoLog sig i systembakken, og tiden kører videre. Klik på ikonet for at vise vinduet; højreklik for en menu.\n• Den røde prik på ikonet viser, at tiden kører.\n• KronoLog søger selv efter nye versioner og viser et banner, når der er en (☰ → Opdateringer). \"Hvad er nyt?\" samme sted viser ændringerne i hver version.\n• Hver dag gemmes en sikkerhedskopi af dine data; de sidste 14 dage kan gendannes under ☰ → Sikkerhedskopi."
+  en: "• If you close the window, KronoLog goes to the system tray and the time keeps running. Click the icon to show the window; right-click for a menu.\n• The red dot on the icon shows that time is running.\n• KronoLog checks for new versions by itself and shows a banner when there is one (☰ → Updates). \"What's new?\" in the same place lists the changes in each version.\n• A backup of your data is saved every day; the last 14 days can be restored under ☰ → Backup."
 tips.did_you_know:
   da: "Vidste du…?"
   en: "Did you know…?"
