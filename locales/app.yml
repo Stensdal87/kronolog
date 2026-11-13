@@ -1532,3 +1532,9 @@ changelog.version:
 changelog.close:
   da: "Luk"
   en: "Close"
+settings.call_name:
+  da: "Skriv navnet fra opkaldsvinduet i noten"
+  en: "Write the name from the call window in the note"
+settings.call_name_hint:
+  da: "Forsøg: titlen på Teams' opkaldsvindue er ofte navnet på den, du taler med. Kun Windows. Titlerne skrives i opkaldsloggen."
+  en: "Experimental: the title of the Teams call window is often the name of the person you are talking to. Windows only. The titles are written to the call log."

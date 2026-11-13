@@ -293,6 +293,8 @@ pub struct Settings {
     pub auto_call: bool,
     /// Programmerne, der tæller som opkald, adskilt med komma.
     pub call_apps: String,
+    /// Skriv navnet fra opkaldsvinduets titel i noten (forsøg, kun Windows).
+    pub call_name: bool,
 }
 
 /// Et projekt i kundeskabelonen.
@@ -347,6 +349,7 @@ impl Default for Settings {
             show_tips: true,
             auto_call: false,
             call_apps: "Teams, Zoom".to_owned(),
+            call_name: true,
         }
     }
 }

@@ -3,6 +3,10 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.0
+
+- Experimental: when the phone is taken automatically on Windows, the name from the Teams call window is written in the note. The window titles are also written to the call log. Can be turned off under ☰ → Calls
+
 ## 1.2.0 (2026-11-12)
 
 - "What's new?" in the settings lists the changes in each version, and the window opens by itself the first time after an update

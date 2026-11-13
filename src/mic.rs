@@ -7,8 +7,8 @@
 //! mens programmet bruger mikrofonen. På Linux spørges PipeWire/PulseAudio med
 //! `pactl`. Der spørges hvert andet sekund i en tråd.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
@@ -25,6 +25,17 @@ struct Seen {
     /// der er set, mens programmet har kørt. Til at vælge navnet i
     /// indstillingerne (#28).
     known: Vec<String>,
+    /// Opkaldsprogrammernes synlige vinduer, mens mikrofonen er i brug (kun
+    /// Windows). `new` er vinduer, der ikke fandtes, før mikrofonen blev taget:
+    /// typisk selve opkaldsvinduet, hvis titel ofte er navnet på den, man
+    /// taler med.
+    windows: Vec<CallWindow>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CallWindow {
+    pub title: String,
+    pub new: bool,
 }
 
 pub struct MicWatcher {
@@ -32,6 +43,8 @@ pub struct MicWatcher {
     seen: Seen,
     /// Tråden spørger kun, når nogen har brug for svaret.
     wanted: Arc<AtomicBool>,
+    /// Programmerne fra indstillingerne; deres vinduer følges under opkald.
+    call_apps: Arc<Mutex<String>>,
 }
 
 impl MicWatcher {
@@ -39,11 +52,15 @@ impl MicWatcher {
         let (tx, rx) = mpsc::channel();
         let wanted = Arc::new(AtomicBool::new(false));
         let thread_wanted = wanted.clone();
+        let call_apps = Arc::new(Mutex::new(String::new()));
+        let thread_apps = call_apps.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let mut last = Seen::default();
+            // Opkaldsprogrammernes vinduer, sidst mikrofonen var fri.
+            let mut before: Vec<isize> = Vec::new();
             loop {
-                let mut seen = Seen { in_use: Vec::new(), known: last.known.clone() };
+                let mut seen = Seen { in_use: Vec::new(), known: last.known.clone(), windows: Vec::new() };
                 if thread_wanted.load(Ordering::Relaxed) {
                     let (in_use, known) = microphone_apps();
                     seen.in_use = in_use;
@@ -51,6 +68,16 @@ impl MicWatcher {
                     seen.known.extend(seen.in_use.iter().cloned());
                     seen.known.sort_by_key(|a| a.to_lowercase());
                     seen.known.dedup();
+                    let apps = thread_apps.lock().map(|a| a.clone()).unwrap_or_default();
+                    let windows = app_windows(&apps);
+                    if seen.in_use.is_empty() {
+                        before = windows.into_iter().map(|(id, _)| id).collect();
+                    } else {
+                        seen.windows = windows
+                            .into_iter()
+                            .map(|(id, title)| CallWindow { title, new: !before.contains(&id) })
+                            .collect();
+                    }
                 }
                 if seen != last {
                     if tx.send(seen.clone()).is_err() {
@@ -68,11 +95,16 @@ impl MicWatcher {
                 std::thread::sleep(POLL_EVERY);
             }
         });
-        Self { rx, seen: Seen::default(), wanted }
+        Self { rx, seen: Seen::default(), wanted, call_apps }
     }
 
-    pub fn set_wanted(&self, wanted: bool) {
+    pub fn set_wanted(&self, wanted: bool, call_apps: &str) {
         self.wanted.store(wanted, Ordering::Relaxed);
+        if let Ok(mut apps) = self.call_apps.lock()
+            && *apps != call_apps
+        {
+            call_apps.clone_into(&mut apps);
+        }
     }
 
     fn refresh(&mut self) {
@@ -85,6 +117,12 @@ impl MicWatcher {
     pub fn apps(&mut self) -> &[String] {
         self.refresh();
         &self.seen.in_use
+    }
+
+    /// Opkaldsprogrammernes vinduer, mens mikrofonen er i brug.
+    pub fn windows(&mut self) -> &[CallWindow] {
+        self.refresh();
+        &self.seen.windows
     }
 
     /// Programmer, der har brugt mikrofonen (til at vælge navnet).
@@ -104,6 +142,101 @@ pub fn matches(apps: &[String], wanted: &str) -> bool {
         let app = app.to_lowercase();
         wanted.iter().any(|w| app.contains(w.as_str()))
     })
+}
+
+/// Gæt på, hvem man taler med: titlen på det første vindue, der kom, da
+/// opkaldet startede, uden programnavnet. "Anna Jensen | Microsoft Teams" giver
+/// "Anna Jensen". Er der intet nyt vindue, gættes der ikke.
+pub fn caller_name(windows: &[CallWindow]) -> Option<String> {
+    windows.iter().filter(|w| w.new).find_map(|w| clean_title(&w.title))
+}
+
+fn clean_title(title: &str) -> Option<String> {
+    let generic = ["microsoft teams", "teams", "zoom", "zoom meeting", "zoom workplace"];
+    title
+        .split(['|', '\u{2013}', '\u{2014}'])
+        .map(str::trim)
+        .find(|part| !part.is_empty() && !generic.contains(&part.to_lowercase().as_str()))
+        .map(str::to_owned)
+}
+
+/// Synlige vinduer med titel (id og titel) fra programmer, hvis exe-navn
+/// matcher `apps` (som i indstillingerne, f.eks. "Teams" matcher ms-teams.exe).
+#[cfg(windows)]
+fn app_windows(apps: &str) -> Vec<(isize, String)> {
+    use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    if apps.trim().is_empty() {
+        return Vec::new();
+    }
+
+    fn exe_name(pid: u32) -> Option<String> {
+        // SAFETY: håndtaget lukkes igen; bufferen og længden passer sammen.
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return None;
+            }
+            let mut buffer = [0u16; 1024];
+            let mut len = buffer.len() as u32;
+            let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buffer.as_mut_ptr(), &mut len);
+            CloseHandle(process);
+            (ok != 0).then(|| {
+                let path = String::from_utf16_lossy(&buffer[..len as usize]);
+                path.rsplit('\\').next().unwrap_or(&path).to_owned()
+            })
+        }
+    }
+
+    unsafe extern "system" fn each(hwnd: HWND, list: LPARAM) -> i32 {
+        // SAFETY: `list` er pegeren til vektoren nedenfor, som lever under EnumWindows.
+        let list = unsafe { &mut *(list as *mut Vec<(HWND, u32)>) };
+        // SAFETY: hwnd kommer fra EnumWindows.
+        if unsafe { IsWindowVisible(hwnd) } != 0 {
+            let mut pid = 0u32;
+            // SAFETY: som ovenfor.
+            unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+            list.push((hwnd, pid));
+        }
+        1
+    }
+
+    let mut all: Vec<(HWND, u32)> = Vec::new();
+    // SAFETY: tilbagekaldet bruger kun vektoren, mens EnumWindows kører.
+    unsafe { EnumWindows(Some(each), &raw mut all as LPARAM) };
+    let mut names: std::collections::HashMap<u32, bool> = std::collections::HashMap::new();
+    let mut windows = Vec::new();
+    for (hwnd, pid) in all {
+        let wanted = *names.entry(pid).or_insert_with(|| exe_name(pid).is_some_and(|exe| matches(&[exe], apps)));
+        if !wanted {
+            continue;
+        }
+        // SAFETY: bufferen er stor nok til titlen og nul-tegnet.
+        let title = unsafe {
+            let len = GetWindowTextLengthW(hwnd);
+            if len <= 0 {
+                continue;
+            }
+            let mut buffer = vec![0u16; len as usize + 1];
+            let copied = GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32);
+            String::from_utf16_lossy(&buffer[..copied.max(0) as usize])
+        };
+        if !title.trim().is_empty() {
+            windows.push((hwnd as isize, title));
+        }
+    }
+    windows
+}
+
+#[cfg(not(windows))]
+fn app_windows(_apps: &str) -> Vec<(isize, String)> {
+    Vec::new()
 }
 
 /// Et pænt navn ud fra Windows' nøglenavn: "MSTeams_8wekyb3d8bbwe" (app fra
@@ -320,6 +453,16 @@ mod tests {
     fn windows_key_names_become_app_names() {
         assert_eq!(windows_app_name("MSTeams_8wekyb3d8bbwe"), "MSTeams");
         assert_eq!(windows_app_name("C:#Program Files#Zoom#bin#Zoom.exe"), "Zoom.exe");
+    }
+
+    #[test]
+    fn caller_name_comes_from_the_new_window_without_the_app_name() {
+        let window = |title: &str, new| CallWindow { title: title.to_owned(), new };
+        let windows = [window("Chat | Bo Hansen | Microsoft Teams", false), window("Anna Jensen | Microsoft Teams", true)];
+        assert_eq!(caller_name(&windows).as_deref(), Some("Anna Jensen"));
+        assert_eq!(caller_name(&windows[..1]), None, "hovedvinduet var der i forvejen");
+        assert_eq!(caller_name(&[window("Microsoft Teams", true)]), None);
+        assert_eq!(caller_name(&[window("Ugemøde – Microsoft Teams", true)]).as_deref(), Some("Ugemøde"));
     }
 
     #[test]

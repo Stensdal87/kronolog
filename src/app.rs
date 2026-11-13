@@ -195,6 +195,10 @@ pub struct KronoLogApp {
     /// Hvad loggen sidst skrev om mikrofonen og indstillingen.
     logged_mic_apps: Option<Vec<String>>,
     logged_auto_call: Option<bool>,
+    /// Opkaldsvinduerne, som loggen sidst skrev dem.
+    logged_call_windows: Vec<crate::mic::CallWindow>,
+    /// Navnet fra opkaldsvinduet er forsøgt skrevet i noten for dette opkald.
+    call_named: bool,
     /// Sidst `handle_microphone` kørte; et langt hul skrives i loggen.
     last_mic_check: Instant,
     /// Globale genvejstaster (kun Windows indtil videre).
@@ -306,6 +310,8 @@ impl KronoLogApp {
             mic_log,
             logged_mic_apps: None,
             logged_auto_call: None,
+            logged_call_windows: Vec::new(),
+            call_named: false,
             last_mic_check: Instant::now(),
             hotkeys: None,
             shortcuts_dialog: None,
@@ -2072,7 +2078,7 @@ impl KronoLogApp {
     /// skal være i brug i 2 s og fri i 4 s.
     fn handle_microphone(&mut self, ctx: &egui::Context) {
         let settings = &self.data.settings;
-        self.mic.set_wanted(settings.auto_call || self.settings_open);
+        self.mic.set_wanted(settings.auto_call || self.settings_open, &settings.call_apps);
         let now = Instant::now();
         let gap = now - std::mem::replace(&mut self.last_mic_check, now);
         if self.logged_auto_call != Some(settings.auto_call) {
@@ -2113,6 +2119,19 @@ impl KronoLogApp {
             self.mic_log.write(&line);
             self.logged_mic_apps = Some(apps);
         }
+        // Opkaldsprogrammets vinduer, så man kan se, hvad titlerne siger om,
+        // hvem man taler med.
+        let windows = self.mic.windows().to_vec();
+        if windows != self.logged_call_windows {
+            if !windows.is_empty() {
+                let titles: Vec<String> = windows
+                    .iter()
+                    .map(|w| format!("\"{}\"{}", w.title, if w.new { " (nyt)" } else { "" }))
+                    .collect();
+                self.mic_log.write(&format!("Vinduer: {}", titles.join(", ")));
+            }
+            self.logged_call_windows = windows.clone();
+        }
         let in_call = self.data.active.as_ref().is_some_and(|a| a.is_call());
         let current = self.active_description();
         if busy {
@@ -2151,8 +2170,25 @@ impl KronoLogApp {
                         self.mic_log.write("Mikrofonen fri; opkaldet var allerede afsluttet i hånden");
                     }
                     self.auto_call = AutoCall::Idle;
+                    self.call_named = false;
                 } else {
                     ctx.request_repaint_after(StdDuration::from_millis(500));
+                }
+            }
+        }
+        // Navnet fra opkaldsvinduet i noten, hvis den er tom. Vinduet kommer
+        // måske lidt efter mikrofonen, så der prøves, indtil der er et navn.
+        if self.auto_call == AutoCall::Started && !self.call_named && self.data.settings.call_name
+            && let Some(name) = crate::mic::caller_name(&windows)
+        {
+            self.call_named = true;
+            if let Some(active) = self.data.active.as_mut().filter(|a| a.is_call()) {
+                if active.description.trim().is_empty() {
+                    active.description = name.clone();
+                    self.save();
+                    self.mic_log.write(&format!("Navn fra opkaldsvinduet skrevet i noten: \"{name}\""));
+                } else {
+                    self.mic_log.write(&format!("Navn fra opkaldsvinduet: \"{name}\" (noten var udfyldt, røres ikke)"));
                 }
             }
         }
@@ -2651,6 +2687,10 @@ impl KronoLogApp {
                 .response
                 .on_hover_text(tr!("settings.pick_mic_app"));
             });
+        });
+        ui.add_enabled_ui(settings.auto_call, |ui| {
+            ui.checkbox(&mut settings.call_name, tr!("settings.call_name"))
+                .on_hover_text(tr!("settings.call_name_hint"));
         });
         let apps = self.mic.apps().join(", ");
         let using = if apps.is_empty() { tr!("settings.mic_free") } else { tr!("settings.mic_used_by", apps = apps) };

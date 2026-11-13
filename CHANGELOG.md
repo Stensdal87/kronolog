@@ -3,6 +3,10 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.0
+
+- Forsøg: når telefonen tages automatisk på Windows, skrives navnet fra Teams' opkaldsvindue i noten. Titlerne på vinduerne skrives også i opkaldsloggen. Kan slås fra under ☰ → Opkald
+
 ## 1.2.0 (2026-11-12)
 
 - "Hvad er nyt?" i indstillingerne viser ændringerne i hver version, og vinduet åbner af sig selv første gang efter en opdatering
