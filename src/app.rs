@@ -2232,6 +2232,9 @@ impl KronoLogApp {
                     } else if self.auto_call == AutoCall::Started {
                         self.mic_log.write("Mikrofonen fri; opkaldet var allerede afsluttet i hånden");
                     }
+                    if self.auto_call == AutoCall::Started && !self.call_named && self.data.settings.call_name {
+                        self.mic_log.write("Intet navn fundet i opkaldsprogrammets vinduer");
+                    }
                     self.auto_call = AutoCall::Idle;
                     self.call_named = false;
                 } else {

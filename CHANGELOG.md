@@ -3,6 +3,10 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.1 (2026-11-16)
+
+- Navnet fra Teams kommer nu i noten, også når opkaldsvinduet allerede var åbent, mens det ringede (#39). Loggen skriver, hvis der ikke blev fundet noget navn
+
 ## 1.3.0 (2026-11-13)
 
 - Forsøg: når telefonen tages automatisk på Windows, skrives navnet fra Teams' opkaldsvindue i noten. Titlerne på vinduerne skrives også i opkaldsloggen. Kan slås fra under ☰ → Opkald

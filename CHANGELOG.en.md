@@ -3,6 +3,10 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.1 (2026-11-16)
+
+- The name from Teams now goes in the note, also when the call window was already open while it was ringing (#39). The log says so if no name was found
+
 ## 1.3.0 (2026-11-13)
 
 - Experimental: when the phone is taken automatically on Windows, the name from the Teams call window is written in the note. The window titles are also written to the call log. Can be turned off under ☰ → Calls

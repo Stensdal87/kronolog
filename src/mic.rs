@@ -26,9 +26,8 @@ struct Seen {
     /// indstillingerne (#28).
     known: Vec<String>,
     /// Opkaldsprogrammernes synlige vinduer, mens mikrofonen er i brug (kun
-    /// Windows). `new` er vinduer, der ikke fandtes, før mikrofonen blev taget:
-    /// typisk selve opkaldsvinduet, hvis titel ofte er navnet på den, man
-    /// taler med.
+    /// Windows). `new` er vinduer, der ikke fandtes eller havde en anden titel,
+    /// før mikrofonen blev taget.
     windows: Vec<CallWindow>,
 }
 
@@ -58,7 +57,7 @@ impl MicWatcher {
         std::thread::spawn(move || {
             let mut last = Seen::default();
             // Opkaldsprogrammernes vinduer, sidst mikrofonen var fri.
-            let mut before: Vec<isize> = Vec::new();
+            let mut before: Vec<(isize, String)> = Vec::new();
             loop {
                 let mut seen = Seen { in_use: Vec::new(), known: last.known.clone(), windows: Vec::new() };
                 if thread_wanted.load(Ordering::Relaxed) {
@@ -71,11 +70,14 @@ impl MicWatcher {
                     let apps = thread_apps.lock().map(|a| a.clone()).unwrap_or_default();
                     let windows = app_windows(&apps);
                     if seen.in_use.is_empty() {
-                        before = windows.into_iter().map(|(id, _)| id).collect();
+                        before = windows;
                     } else {
                         seen.windows = windows
                             .into_iter()
-                            .map(|(id, title)| CallWindow { title, new: !before.contains(&id) })
+                            .map(|(id, title)| {
+                                let new = !before.contains(&(id, title.clone()));
+                                CallWindow { title, new }
+                            })
                             .collect();
                     }
                 }
@@ -144,20 +146,32 @@ pub fn matches(apps: &[String], wanted: &str) -> bool {
     })
 }
 
-/// Gæt på, hvem man taler med: titlen på det første vindue, der kom, da
-/// opkaldet startede, uden programnavnet. "Anna Jensen | Microsoft Teams" giver
-/// "Anna Jensen". Er der intet nyt vindue, gættes der ikke.
+/// Gæt på, hvem man taler med, ud fra vinduestitlerne (#39). Teams' opkaldsvindue
+/// hedder "Anna Jensen | Microsoft Teams" (flere deltagere adskilt med komma,
+/// møder med mødets titel), mens hovedvinduet har en sektion foran:
+/// "Chat | Bo Hansen | Microsoft Teams" eller "Calendar | Microsoft Teams".
+/// Opkaldsvinduet findes ofte allerede, mens det ringer, og har titlen
+/// "Microsoft Teams", indtil opkaldet er taget, så det kan ikke kræves, at
+/// vinduet er nyt; nye eller ændrede vinduer foretrækkes bare.
 pub fn caller_name(windows: &[CallWindow]) -> Option<String> {
-    windows.iter().filter(|w| w.new).find_map(|w| clean_title(&w.title))
+    let new = windows.iter().filter(|w| w.new);
+    let old = windows.iter().filter(|w| !w.new);
+    new.chain(old).find_map(|w| call_title(&w.title))
 }
 
-fn clean_title(title: &str) -> Option<String> {
-    let generic = ["microsoft teams", "teams", "zoom", "zoom meeting", "zoom workplace"];
-    title
-        .split(['|', '\u{2013}', '\u{2014}'])
-        .map(str::trim)
-        .find(|part| !part.is_empty() && !generic.contains(&part.to_lowercase().as_str()))
-        .map(str::to_owned)
+/// Titlen uden programnavnet, hvis det ligner et opkaldsvindue.
+fn call_title(title: &str) -> Option<String> {
+    const APPS: [&str; 5] = ["microsoft teams", "teams", "zoom", "zoom meeting", "zoom workplace"];
+    // Hovedvinduets sektioner (engelsk og dansk Teams).
+    const SECTIONS: [&str; 24] = [
+        "chat", "calendar", "kalender", "activity", "aktivitet", "teams", "calls", "opkald", "files", "filer",
+        "apps", "onedrive", "copilot", "people", "personer", "communities", "fællesskaber", "settings",
+        "indstillinger", "notifications", "meddelelser", "assignments", "opgaver", "planner",
+    ];
+    let parts: Vec<&str> = title.split(['|', '\u{2013}', '\u{2014}']).map(str::trim).filter(|p| !p.is_empty()).collect();
+    let [name, app] = parts[..] else { return None };
+    let is = |list: &[&str], text: &str| list.contains(&text.to_lowercase().as_str());
+    (is(&APPS, app) && !is(&APPS, name) && !is(&SECTIONS, name)).then(|| name.to_owned())
 }
 
 /// Synlige vinduer med titel (id og titel) fra programmer, hvis exe-navn
@@ -456,13 +470,34 @@ mod tests {
     }
 
     #[test]
-    fn caller_name_comes_from_the_new_window_without_the_app_name() {
+    fn caller_name_comes_from_the_call_window_without_the_app_name() {
         let window = |title: &str, new| CallWindow { title: title.to_owned(), new };
-        let windows = [window("Chat | Bo Hansen | Microsoft Teams", false), window("Anna Jensen | Microsoft Teams", true)];
-        assert_eq!(caller_name(&windows).as_deref(), Some("Anna Jensen"));
-        assert_eq!(caller_name(&windows[..1]), None, "hovedvinduet var der i forvejen");
-        assert_eq!(caller_name(&[window("Microsoft Teams", true)]), None);
+        // Titlerne fra loggen i #39.
+        let ringing = [
+            window("Michael Hundebøll Andersen | Microsoft Teams", false),
+            window("Chat | Michael Hundebøll Andersen (Ekstern og ukendt) | Microsoft Teams", false),
+        ];
+        assert_eq!(caller_name(&ringing).as_deref(), Some("Michael Hundebøll Andersen"), "vinduet fandtes, mens det ringede");
+        let answering = [
+            window("Microsoft Teams", true),
+            window("Microsoft Teams", false),
+            window("Chat | Frederik Agner - NTI A/S | Microsoft Teams", false),
+        ];
+        assert_eq!(caller_name(&answering), None, "intet navn endnu; prøv igen");
+        let answered = [
+            window("Microsoft Teams", true),
+            window("Ardeshir Najafi - NTI A/S | Microsoft Teams", true),
+            window("Chat | Frederik Agner - NTI A/S | Microsoft Teams", false),
+        ];
+        assert_eq!(caller_name(&answered).as_deref(), Some("Ardeshir Najafi - NTI A/S"));
+        let group = [window("Ardeshir Najafi - NTI A/S, Jacob Frederiksen - NTI A/S | Microsoft Teams", false)];
+        assert_eq!(caller_name(&group).as_deref(), Some("Ardeshir Najafi - NTI A/S, Jacob Frederiksen - NTI A/S"));
+        assert_eq!(caller_name(&[window("Calendar | Microsoft Teams", true)]), None, "hovedvinduet");
+        assert_eq!(caller_name(&[window("Kalender | Microsoft Teams", true)]), None);
         assert_eq!(caller_name(&[window("Ugemøde – Microsoft Teams", true)]).as_deref(), Some("Ugemøde"));
+        // Et nyt eller ændret vindue går forud for et gammelt.
+        let both = [window("Bo Hansen | Microsoft Teams", false), window("Anna Jensen | Microsoft Teams", true)];
+        assert_eq!(caller_name(&both).as_deref(), Some("Anna Jensen"));
     }
 
     #[test]
