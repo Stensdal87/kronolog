@@ -162,6 +162,10 @@ pub struct KronoLogApp {
     forgot_prompt: Option<DateTime<Local>>,
     /// Ingen påmindelse før da ("Om en time" / "Ikke i dag").
     forgot_snoozed_until: Option<DateTime<Local>>,
+    /// Sidst "Glemt at starte tiden?" talte, og ingen påmindelse før
+    /// `forgot_hold_until` efter et langt hul (måske dvale, #40).
+    forgot_checked: Option<DateTime<Local>>,
+    forgot_hold_until: Option<DateTime<Local>>,
     /// "Timebudget…": projektet og budgettet i timer, mens det rettes.
     budget_dialog: Option<(Id, f32)>,
     /// Besked efter eksport/import af kunde- og projektlisten.
@@ -298,6 +302,8 @@ impl KronoLogApp {
             budget_dialog: None,
             list_message: None,
             present_since: None,
+            forgot_checked: None,
+            forgot_hold_until: None,
             forgot_prompt: None,
             forgot_snoozed_until: None,
             restore_prompt: None,
@@ -2941,6 +2947,9 @@ impl KronoLogApp {
                     self.away_since = None;
                     self.away_prompt = None;
                     self.away_handled_until = self.away_handled_until.max(to);
+                    // "Glemt at starte tiden?" tæller fra opvågningen, ikke fra
+                    // før dvalen (#40).
+                    self.woke_up(to);
                     if let Some(snapshot) = self.data.suspend(from) {
                         self.save();
                         // Et opkald uden projekt ender som ventende opkald i stedet.

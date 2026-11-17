@@ -3,6 +3,10 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.2 (2026-11-17)
+
+- "Forgot to start the timer?" after sleep now suggests starting from when the computer woke up instead of from when the timer was stopped before sleep (#40)
+
 ## 1.3.1 (2026-11-16)
 
 - The name from Teams now goes in the note, also when the call window was already open while it was ringing (#39). The log says so if no name was found

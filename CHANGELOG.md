@@ -3,6 +3,10 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.2 (2026-11-17)
+
+- "Glemt at starte tiden?" efter dvale foreslår nu at starte fra, da computeren vågnede, i stedet for fra da tiden blev stoppet før dvalen (#40)
+
 ## 1.3.1 (2026-11-16)
 
 - Navnet fra Teams kommer nu i noten, også når opkaldsvinduet allerede var åbent, mens det ringede (#39). Loggen skriver, hvis der ikke blev fundet noget navn

@@ -14,6 +14,12 @@ impl KronoLogApp {
     /// kørende tid i `settings.forgot_minutes`.
     pub(super) fn handle_forgot_timer(&mut self, ctx: &egui::Context) {
         let now = Local::now();
+        // Et langt hul siden sidst kan være dvale. Dvalen meldes af `IdleWatcher`
+        // inden for 5 s og nulstiller så tællingen (`woke_up`); indtil da vises
+        // påmindelsen ikke, så den ikke når at foreslå tiden fra før dvalen.
+        if self.forgot_checked.replace(now).is_some_and(|last| now - last > Duration::seconds(60)) {
+            self.forgot_hold_until = Some(now + Duration::seconds(10));
+        }
         let settings = &self.data.settings;
         if !settings.forgot_reminder || self.data.active.is_some() || self.away_since.is_some() {
             // Tiden kører, eller man er væk: tæl forfra næste gang.
@@ -28,11 +34,29 @@ impl KronoLogApp {
         if self.forgot_prompt.is_some() || self.forgot_snoozed_until.is_some_and(|until| now < until) {
             return;
         }
+        if let Some(hold) = self.forgot_hold_until {
+            if now < hold {
+                ctx.request_repaint_after((hold - now).to_std().unwrap_or_default());
+                return;
+            }
+            self.forgot_hold_until = None;
+        }
         if now >= due {
             self.forgot_prompt = Some(since);
         } else {
             // Vågn op, når tiden er gået, også hvis intet andet sker.
             ctx.request_repaint_after((due - now).to_std().unwrap_or_default() + StdDuration::from_millis(100));
+        }
+    }
+
+    /// Computeren er vågnet ved `at`: man har tidligst været ved den siden da.
+    /// En påmindelse, der allerede er vist med tiden fra før dvalen, lukkes.
+    pub(super) fn woke_up(&mut self, at: DateTime<Local>) {
+        if self.present_since.is_some_and(|since| since < at) {
+            self.present_since = Some(at);
+        }
+        if self.forgot_prompt.is_some_and(|since| since < at) {
+            self.forgot_prompt = None;
         }
     }
 
