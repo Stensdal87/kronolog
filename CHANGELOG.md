@@ -3,6 +3,11 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.3
+
+- KronoLog husker, hvilket projekt et opkald med en kontakt blev registreret på, og foreslår det næste gang, så du blot skal trykke Enter (#39)
+- Navnet fra Teams findes nu også, når Teams er logget ind med flere konti, og ved møder bruges mødets titel (#39)
+
 ## 1.3.2 (2026-11-17)
 
 - "Glemt at starte tiden?" efter dvale foreslår nu at starte fra, da computeren vågnede, i stedet for fra da tiden blev stoppet før dvalen (#40)

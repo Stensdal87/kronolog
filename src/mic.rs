@@ -160,18 +160,41 @@ pub fn caller_name(windows: &[CallWindow]) -> Option<String> {
 }
 
 /// Titlen uden programnavnet, hvis det ligner et opkaldsvindue.
+///
+/// Er man logget ind med flere konti, står organisationen og e-mailen foran
+/// programnavnet: "Anna Jensen | Firma | an@firma.dk | Microsoft Teams". Efter
+/// programnavnet kan der stå mere ("| Fastgjort vindue"). Mødevinduer kan have
+/// "Mødedeltagelse" eller "Kompakt visning af møder" foran mødets titel, og
+/// mødets titel kan selv indeholde "|".
 fn call_title(title: &str) -> Option<String> {
     const APPS: [&str; 5] = ["microsoft teams", "teams", "zoom", "zoom meeting", "zoom workplace"];
-    // Hovedvinduets sektioner (engelsk og dansk Teams).
-    const SECTIONS: [&str; 24] = [
+    // Hovedvinduets sektioner og andre vinduer, der ikke er selve opkaldet
+    // (engelsk og dansk Teams).
+    const NOT_CALLS: [&str; 28] = [
         "chat", "calendar", "kalender", "activity", "aktivitet", "teams", "calls", "opkald", "files", "filer",
         "apps", "onedrive", "copilot", "people", "personer", "communities", "fællesskaber", "settings",
         "indstillinger", "notifications", "meddelelser", "assignments", "opgaver", "planner",
+        "kontrollinjen deling", "sharing control bar", "fastgjort vindue", "pinned window",
     ];
-    let parts: Vec<&str> = title.split(['|', '\u{2013}', '\u{2014}']).map(str::trim).filter(|p| !p.is_empty()).collect();
-    let [name, app] = parts[..] else { return None };
+    // Står foran mødets titel.
+    const PREFIXES: [&str; 5] =
+        ["mødedeltagelse", "kompakt visning af møder", "meeting compact view", "join meeting", "meeting join"];
     let is = |list: &[&str], text: &str| list.contains(&text.to_lowercase().as_str());
-    (is(&APPS, app) && !is(&APPS, name) && !is(&SECTIONS, name)).then(|| name.to_owned())
+    let parts: Vec<&str> = title.split(['|', '\u{2013}', '\u{2014}']).map(str::trim).filter(|p| !p.is_empty()).collect();
+    let app = parts.iter().rposition(|p| is(&APPS, p))?;
+    let mut parts = &parts[..app];
+    // Konto: e-mailen og organisationen foran den.
+    if parts.last().is_some_and(|p| p.contains('@')) {
+        parts = &parts[..parts.len().saturating_sub(2)];
+    }
+    let first = parts.first()?;
+    if is(&NOT_CALLS, first) || is(&APPS, first) {
+        return None;
+    }
+    if is(&PREFIXES, first) {
+        parts = &parts[1..];
+    }
+    (!parts.is_empty()).then(|| parts.join(" | "))
 }
 
 /// Synlige vinduer med titel (id og titel) fra programmer, hvis exe-navn
@@ -472,26 +495,26 @@ mod tests {
     #[test]
     fn caller_name_comes_from_the_call_window_without_the_app_name() {
         let window = |title: &str, new| CallWindow { title: title.to_owned(), new };
-        // Titlerne fra loggen i #39.
+        // Titlerne er bygget som dem i opkaldsloggene i #39, med opdigtede navne.
         let ringing = [
-            window("Michael Hundebøll Andersen | Microsoft Teams", false),
-            window("Chat | Michael Hundebøll Andersen (Ekstern og ukendt) | Microsoft Teams", false),
+            window("Anna Jensen | Microsoft Teams", false),
+            window("Chat | Anna Jensen (Ekstern og ukendt) | Microsoft Teams", false),
         ];
-        assert_eq!(caller_name(&ringing).as_deref(), Some("Michael Hundebøll Andersen"), "vinduet fandtes, mens det ringede");
+        assert_eq!(caller_name(&ringing).as_deref(), Some("Anna Jensen"), "vinduet fandtes, mens det ringede");
         let answering = [
             window("Microsoft Teams", true),
             window("Microsoft Teams", false),
-            window("Chat | Frederik Agner - NTI A/S | Microsoft Teams", false),
+            window("Chat | Bo Hansen - Firma A/S | Microsoft Teams", false),
         ];
         assert_eq!(caller_name(&answering), None, "intet navn endnu; prøv igen");
         let answered = [
             window("Microsoft Teams", true),
-            window("Ardeshir Najafi - NTI A/S | Microsoft Teams", true),
-            window("Chat | Frederik Agner - NTI A/S | Microsoft Teams", false),
+            window("Carl Berg - Firma A/S | Microsoft Teams", true),
+            window("Chat | Bo Hansen - Firma A/S | Microsoft Teams", false),
         ];
-        assert_eq!(caller_name(&answered).as_deref(), Some("Ardeshir Najafi - NTI A/S"));
-        let group = [window("Ardeshir Najafi - NTI A/S, Jacob Frederiksen - NTI A/S | Microsoft Teams", false)];
-        assert_eq!(caller_name(&group).as_deref(), Some("Ardeshir Najafi - NTI A/S, Jacob Frederiksen - NTI A/S"));
+        assert_eq!(caller_name(&answered).as_deref(), Some("Carl Berg - Firma A/S"));
+        let group = [window("Carl Berg - Firma A/S, Dorte Lund - Firma A/S | Microsoft Teams", false)];
+        assert_eq!(caller_name(&group).as_deref(), Some("Carl Berg - Firma A/S, Dorte Lund - Firma A/S"));
         assert_eq!(caller_name(&[window("Calendar | Microsoft Teams", true)]), None, "hovedvinduet");
         assert_eq!(caller_name(&[window("Kalender | Microsoft Teams", true)]), None);
         assert_eq!(caller_name(&[window("Ugemøde – Microsoft Teams", true)]).as_deref(), Some("Ugemøde"));
@@ -500,6 +523,24 @@ mod tests {
         assert_eq!(caller_name(&both).as_deref(), Some("Anna Jensen"));
     }
 
+    #[test]
+    fn caller_name_with_several_accounts_and_meetings() {
+        let window = |title: &str, new| CallWindow { title: title.to_owned(), new };
+        let account = "Firma Group | an@firma.dk | Microsoft Teams";
+        let with = |text: &str| format!("{text} | {account}");
+        assert_eq!(caller_name(&[window(account, true)]), None, "kun kontoen");
+        let call = [window(account, true), window(&with("Chat | Bo Hansen - Firma A/S"), false), window(&with("Bo Hansen - Firma A/S"), false)];
+        assert_eq!(caller_name(&call).as_deref(), Some("Bo Hansen - Firma A/S"));
+        let joining = [window(&with("Mødedeltagelse | Template og styklister"), true)];
+        assert_eq!(caller_name(&joining).as_deref(), Some("Template og styklister"));
+        let meeting = [
+            window(&with("Kontrollinjen Deling"), true),
+            window(&format!("{} | Fastgjort vindue", with("Kompakt visning af møder | Kunde & Firma | Integrationer")), true),
+        ];
+        assert_eq!(caller_name(&meeting).as_deref(), Some("Kunde & Firma | Integrationer"), "titlen må indeholde |");
+        assert_eq!(caller_name(&[window("Kontrollinjen Deling | Microsoft Teams", true)]), None);
+        assert_eq!(caller_name(&[window(&with("Aktivitet"), true)]), None);
+    }
     #[test]
     fn volume_meters_are_not_calls() {
         let json = r#"[

@@ -1200,8 +1200,8 @@ help.pause:
   da: "Pause og telefon"
   en: "Breaks and phone calls"
 help.pause_body:
-  da: "• ☕ Pause registrerer tiden på Intern tid. ▶ Fortsæt går tilbage til projektet, hvor du slap.\n• 📞 Telefon starter tid på et opkald. Når det slutter, vælger du, hvor tiden skal hen, og tiden fortsætter på det forrige projekt.\n• Under ☰ → Opkald kan KronoLog tage telefonen af sig selv, når f.eks. Teams bruger mikrofonen. På Windows kan navnet fra Teams' opkaldsvindue komme i noten (forsøg).\n• Venter flere opkald, kan du sætte flueben ved dem og registrere dem på samme projekt på én gang. Hvert opkald beholder sin note."
-  en: "• ☕ Break records the time on Internal time. ▶ Resume goes back to the project where you left off.\n• 📞 Phone starts time on a call. When it ends, you choose where the time goes, and time continues on the previous project.\n• Under ☰ → Calls, KronoLog can start a phone call by itself when e.g. Teams uses the microphone. On Windows, the name from the Teams call window can go in the note (experimental).\n• When several calls are waiting, you can check them and register them on the same project at once. Each call keeps its note."
+  da: "• ☕ Pause registrerer tiden på Intern tid. ▶ Fortsæt går tilbage til projektet, hvor du slap.\n• 📞 Telefon starter tid på et opkald. Når det slutter, vælger du, hvor tiden skal hen, og tiden fortsætter på det forrige projekt.\n• Under ☰ → Opkald kan KronoLog tage telefonen af sig selv, når f.eks. Teams bruger mikrofonen. På Windows kan navnet fra Teams' opkaldsvindue komme i noten (forsøg).\n• Venter flere opkald, kan du sætte flueben ved dem og registrere dem på samme projekt på én gang. Hvert opkald beholder sin note.\n• Kender KronoLog den, du talte med, foreslås projektet fra sidste opkald med samme kontakt."
+  en: "• ☕ Break records the time on Internal time. ▶ Resume goes back to the project where you left off.\n• 📞 Phone starts time on a call. When it ends, you choose where the time goes, and time continues on the previous project.\n• Under ☰ → Calls, KronoLog can start a phone call by itself when e.g. Teams uses the microphone. On Windows, the name from the Teams call window can go in the note (experimental).\n• When several calls are waiting, you can check them and register them on the same project at once. Each call keeps its note.\n• If KronoLog knows who you talked to, the project from the last call with the same contact is suggested."
 help.history:
   da: "Historik og rettelser"
   en: "History and corrections"
@@ -1559,3 +1559,6 @@ call.discard_many:
 call.discard_many_hint:
   da: "De valgte opkald registreres ikke"
   en: "The selected calls are not registered"
+call.suggested:
+  da: "Foreslået ud fra sidste opkald med %{caller}"
+  en: "Suggested from the last call with %{caller}"

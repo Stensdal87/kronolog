@@ -1733,6 +1733,13 @@ impl KronoLogApp {
                 ui.separator();
             }
             ui.label(tr!("call.where"));
+            // Projektet er foreslået, fordi kontakten sidst blev registreret dér (#39).
+            if !call.caller.is_empty()
+                && target.project_id.is_some()
+                && target.project_id == self.data.remembered_project(&call.caller)
+            {
+                ui.label(RichText::new(tr!("call.suggested", caller = call.caller)).weak().small());
+            }
             ui.separator();
 
             let full = Vec2::new(ui.available_width(), 24.0);
@@ -2192,7 +2199,8 @@ impl KronoLogApp {
         // hvem man taler med.
         let windows = self.mic.windows().to_vec();
         if windows != self.logged_call_windows {
-            if !windows.is_empty() {
+            // Når navnet er fundet, er resten af opkaldets vinduer uden interesse.
+            if !windows.is_empty() && !self.call_named {
                 let titles: Vec<String> = windows
                     .iter()
                     .map(|w| format!("\"{}\"{}", w.title, if w.new { " (nyt)" } else { "" }))
@@ -2255,13 +2263,17 @@ impl KronoLogApp {
         {
             self.call_named = true;
             if let Some(active) = self.data.active.as_mut().filter(|a| a.is_call()) {
+                active.caller = name.clone();
                 if active.description.trim().is_empty() {
                     active.description = name.clone();
-                    self.save();
                     self.mic_log.write(&format!("Navn fra opkaldsvinduet skrevet i noten: \"{name}\""));
                 } else {
                     self.mic_log.write(&format!("Navn fra opkaldsvinduet: \"{name}\" (noten var udfyldt, røres ikke)"));
                 }
+                if let Some(project) = self.data.remembered_project(&name).and_then(|id| self.data.project(id)) {
+                    self.mic_log.write(&format!("Projektet fra sidst foreslås: {}", project.name));
+                }
+                self.save();
             }
         }
     }

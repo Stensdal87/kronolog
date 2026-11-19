@@ -3,6 +3,11 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.3
+
+- KronoLog remembers which project a call with a contact was registered on and suggests it next time, so you only have to press Enter (#39)
+- The name from Teams is now also found when Teams is signed in with several accounts, and for meetings the meeting title is used (#39)
+
 ## 1.3.2 (2026-11-17)
 
 - "Forgot to start the timer?" after sleep now suggests starting from when the computer woke up instead of from when the timer was stopped before sleep (#40)

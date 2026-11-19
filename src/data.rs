@@ -101,6 +101,9 @@ pub struct UnassignedEntry {
     pub target: CallTarget,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// Hvem man talte med (#39); projektet huskes til næste gang.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub caller: String,
 }
 
 impl UnassignedEntry {
@@ -133,6 +136,9 @@ pub struct ActiveTimer {
     /// Note der skrives mens tiden kører; følger med registreringen.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    /// Under et opkald: hvem man taler med, fra opkaldsprogrammets vindue (#39).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub caller: String,
 }
 
 /// Kopi af en kørende tidstagning med uret frosset (`carried_secs` = vist tid),
@@ -246,6 +252,10 @@ pub struct Data {
     /// Menuen viser projektets tid denne uge i stedet for i alt (#38).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub day_panel_week: bool,
+    /// Projektet, et opkald med en kontakt (navn med små bogstaver) sidst blev
+    /// registreret på; foreslås næste gang (#39).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub call_contacts: std::collections::BTreeMap<String, Id>,
 }
 
 /// Brugerens indstillinger (menuen ☰).
@@ -982,14 +992,21 @@ impl Data {
                 description: active.description,
             }),
             None => {
-                let call = UnassignedEntry {
+                let mut call = UnassignedEntry {
                     start: active.start,
                     end,
                     target: active.target,
                     description: active.description,
+                    caller: active.caller,
                 };
                 // Er projektet valgt under opkaldet, registreres det med det samme.
+                // Ellers foreslås projektet, kontakten sidst blev registreret på.
                 if !self.register_call(&call) {
+                    if call.target.is_empty()
+                        && let Some(project_id) = self.remembered_project(&call.caller)
+                    {
+                        call.target.project_id = Some(project_id);
+                    }
                     self.unassigned.push(call);
                 }
             }
@@ -1025,10 +1042,22 @@ impl Data {
     }
 
     /// Gemmer opkaldet som registrering, hvis dets mål er udfyldt.
+    /// Projektet, et opkald med kontakten sidst blev registreret på, hvis det
+    /// stadig findes.
+    pub fn remembered_project(&self, caller: &str) -> Option<Id> {
+        let key = caller.trim().to_lowercase();
+        let id = *self.call_contacts.get(&key).filter(|_| !key.is_empty())?;
+        self.project(id).is_some_and(|p| !p.deleted).then_some(id)
+    }
+
     fn register_call(&mut self, call: &UnassignedEntry) -> bool {
         let Some(project_id) = self.resolve_target(&call.target) else {
             return false;
         };
+        let caller = call.caller.trim().to_lowercase();
+        if !caller.is_empty() {
+            self.call_contacts.insert(caller, project_id);
+        }
         self.entries.push(TimeEntry {
             project_id,
             start: call.start,
@@ -1478,6 +1507,7 @@ mod tests {
                 end: start + Duration::minutes(5),
                 target: CallTarget::default(),
                 description: note.to_owned(),
+                caller: String::new(),
             });
         }
         let typed = CallTarget { customer: "Ny kunde".into(), project: "Support".into(), ..Default::default() };
@@ -1492,6 +1522,32 @@ mod tests {
 
         data.discard_unassigned(&[0, 5]);
         assert!(data.unassigned.is_empty());
+    }
+
+    #[test]
+    fn the_project_for_a_caller_is_remembered_and_suggested() {
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        let p = data.add_project(c, "Support");
+        let call_with = |data: &mut Data, caller: &str| {
+            data.start_call();
+            let active = data.active.as_mut().unwrap();
+            active.start -= Duration::minutes(5);
+            active.caller = caller.to_owned();
+            data.stop();
+        };
+        call_with(&mut data, "Anna Jensen - Firma A/S");
+        assert!(data.unassigned[0].target.is_empty(), "ukendt kontakt: intet forslag");
+        assert_eq!(data.register_unassigned(&[0], &CallTarget { project_id: Some(p), ..Default::default() }), 1);
+
+        call_with(&mut data, "anna jensen - firma a/s");
+        assert_eq!(data.unassigned.len(), 1, "forslaget registrerer ikke af sig selv");
+        assert_eq!(data.unassigned[0].target.project_id, Some(p), "projektet foreslås");
+
+        data.discard_unassigned(&[0]);
+        data.delete_project(p);
+        call_with(&mut data, "Anna Jensen - Firma A/S");
+        assert!(data.unassigned[0].target.is_empty(), "et slettet projekt foreslås ikke");
     }
 
     #[test]
