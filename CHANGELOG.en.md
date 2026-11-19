@@ -3,6 +3,12 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.4 (2026-11-19)
+
+- Long links, e.g. copied from Edge, now also open on Windows (#41)
+- For each link you can choose whether it opens in the default browser, Microsoft Edge or Google Chrome (#41)
+- A link can also be a folder, e.g. C:\Customers\Company, which opens in File Explorer (#41)
+
 ## 1.3.3 (2026-11-19)
 
 - KronoLog remembers which project a call with a contact was registered on and suggests it next time, so you only have to press Enter (#39)

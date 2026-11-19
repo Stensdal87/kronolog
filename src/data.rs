@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
+use crate::link::{Browser, Link};
 use crate::project_list::ListRow;
 
 pub type Id = u64;
@@ -26,9 +27,13 @@ pub struct Customer {
     /// Slettede kunder skjules, men beholdes så historikken stadig kan vise navnet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deleted: bool,
-    /// Link til kunden, f.eks. i Salesforce, hvor tiden skal registreres (#41).
+    /// Link til kunden, f.eks. i Salesforce, hvor tiden skal registreres, eller
+    /// en mappe (#41).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub link: String,
+    /// Hvor et weblink åbnes.
+    #[serde(default, skip_serializing_if = "Browser::is_default")]
+    pub link_browser: Browser,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -48,23 +53,8 @@ pub struct Project {
     /// Link til projektet; ellers bruges kundens (#41).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub link: String,
-}
-
-/// Et link, som brugeren har skrevet: uden "https://" foran lægges det til,
-/// så "firma.lightning.force.com/…" også virker.
-pub fn normalize_link(link: &str) -> String {
-    let link = link.trim();
-    if link.is_empty() || link.contains("://") || link.starts_with("mailto:") {
-        link.to_owned()
-    } else {
-        format!("https://{link}")
-    }
-}
-
-/// Kun web- og mail-links åbnes, så et link aldrig kan starte et program.
-pub fn can_open_link(link: &str) -> bool {
-    let lower = link.to_lowercase();
-    ["https://", "http://", "mailto:"].iter().any(|p| lower.starts_with(p))
+    #[serde(default, skip_serializing_if = "Browser::is_default")]
+    pub link_browser: Browser,
 }
 
 /// En afsluttet tidsregistrering.
@@ -477,7 +467,7 @@ impl Data {
 
     pub fn add_customer(&mut self, name: &str) -> Id {
         let id = self.new_id();
-        self.customers.push(Customer { id, name: name.to_owned(), deleted: false, link: String::new() });
+        self.customers.push(Customer { id, name: name.to_owned(), deleted: false, link: String::new(), link_browser: Browser::Default });
         id
     }
 
@@ -491,6 +481,7 @@ impl Data {
             favorite: false,
             budget_minutes: None,
             link: String::new(),
+            link_browser: Browser::Default,
         });
         id
     }
@@ -510,25 +501,30 @@ impl Data {
 
     /// Sætter projektets timebudget (`None` eller 0 fjerner det).
     /// Linket til et projekt: projektets eget, ellers kundens (#41).
-    pub fn link_for(&self, project_id: Id) -> Option<&str> {
+    pub fn link_for(&self, project_id: Id) -> Option<Link<'_>> {
         let project = self.project(project_id)?;
-        let link = if project.link.is_empty() { &self.customer(project.customer_id)?.link } else { &project.link };
-        (!link.is_empty()).then_some(link.as_str())
+        if project.link.is_empty() {
+            return self.customer_link(project.customer_id);
+        }
+        Some(Link { target: &project.link, browser: project.link_browser })
     }
 
-    pub fn customer_link(&self, customer_id: Id) -> Option<&str> {
-        self.customer(customer_id).map(|c| c.link.as_str()).filter(|l| !l.is_empty())
+    pub fn customer_link(&self, customer_id: Id) -> Option<Link<'_>> {
+        let customer = self.customer(customer_id).filter(|c| !c.link.is_empty())?;
+        Some(Link { target: &customer.link, browser: customer.link_browser })
     }
 
-    pub fn set_customer_link(&mut self, customer_id: Id, link: &str) {
+    pub fn set_customer_link(&mut self, customer_id: Id, link: &str, browser: Browser) {
         if let Some(c) = self.customers.iter_mut().find(|c| c.id == customer_id) {
-            c.link = normalize_link(link);
+            c.link = crate::link::normalize(link);
+            c.link_browser = browser;
         }
     }
 
-    pub fn set_project_link(&mut self, project_id: Id, link: &str) {
+    pub fn set_project_link(&mut self, project_id: Id, link: &str, browser: Browser) {
         if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
-            p.link = normalize_link(link);
+            p.link = crate::link::normalize(link);
+            p.link_browser = browser;
         }
     }
 
@@ -584,7 +580,7 @@ impl Data {
                     self.add_customer(customer)
                 }
             };
-            let link = normalize_link(&row.customer_link);
+            let link = crate::link::normalize(&row.customer_link);
             if let Some(c) = self.customers.iter_mut().find(|c| c.id == customer_id)
                 && !link.is_empty()
                 && c.link != link
@@ -601,7 +597,7 @@ impl Data {
                 projects += 1;
                 self.add_project(customer_id, project)
             });
-            let link = normalize_link(&row.project_link);
+            let link = crate::link::normalize(&row.project_link);
             if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id)
                 && !link.is_empty()
                 && p.link != link
@@ -1605,15 +1601,14 @@ mod tests {
         let mut data = Data::default();
         let c = data.add_customer("Kunde");
         let p = data.add_project(c, "A");
-        assert_eq!(data.link_for(p), None);
-        data.set_customer_link(c, " firma.my.salesforce.com/kunde ");
-        assert_eq!(data.link_for(p), Some("https://firma.my.salesforce.com/kunde"));
-        data.set_project_link(p, "https://firma.my.salesforce.com/projekt?id=1&x=2");
-        assert_eq!(data.link_for(p), Some("https://firma.my.salesforce.com/projekt?id=1&x=2"));
-        data.set_project_link(p, "  ");
-        assert_eq!(data.link_for(p), Some("https://firma.my.salesforce.com/kunde"), "tomt fjerner projektets link");
-        assert!(can_open_link("HTTPS://x.dk") && can_open_link("mailto:a@b.dk"));
-        assert!(!can_open_link("file:///C:/Windows/system32/calc.exe") && !can_open_link("C:\\x.exe"));
+        let url = |data: &Data| data.link_for(p).map(|l| (l.target.to_owned(), l.browser));
+        assert_eq!(url(&data), None);
+        data.set_customer_link(c, " firma.my.salesforce.com/kunde ", Browser::Edge);
+        assert_eq!(url(&data), Some(("https://firma.my.salesforce.com/kunde".into(), Browser::Edge)));
+        data.set_project_link(p, "\"C:\\Kunder\\Kunde\"", Browser::Default);
+        assert_eq!(url(&data), Some(("C:\\Kunder\\Kunde".into(), Browser::Default)));
+        data.set_project_link(p, "  ", Browser::Chrome);
+        assert_eq!(url(&data), Some(("https://firma.my.salesforce.com/kunde".into(), Browser::Edge)), "tomt: kundens");
     }
 
     #[test]
@@ -2193,24 +2188,24 @@ mod tests {
         let c = from.add_customer("Acme");
         let p = from.add_project(c, "Web");
         from.add_project(c, "App");
-        from.set_customer_link(c, "sf.example.com/acme");
-        from.set_project_link(p, "https://sf.example.com/web");
+        from.set_customer_link(c, "sf.example.com/acme", Browser::Default);
+        from.set_project_link(p, "https://sf.example.com/web", Browser::Default);
         let shared = crate::project_list::parse_csv(&crate::project_list::to_csv(&from.project_list()));
 
         let mut to = Data::default();
         let mine = to.add_customer("ACME");
         let web = to.add_project(mine, "web");
-        to.set_project_link(web, "https://old.example.com");
+        to.set_project_link(web, "https://old.example.com", Browser::Chrome);
         assert_eq!(to.import_project_list(&shared), (0, 1, 2), "App er ny; kundens og Webs link");
-        assert_eq!(to.customer_link(mine), Some("https://sf.example.com/acme"));
-        assert_eq!(to.link_for(web), Some("https://sf.example.com/web"), "et ændret link opdateres");
+        assert_eq!(to.customer_link(mine).map(|l| l.target), Some("https://sf.example.com/acme"));
+        assert_eq!(to.link_for(web), Some(Link { target: "https://sf.example.com/web", browser: Browser::Chrome }), "linket opdateres; browseren er ens egen");
         let app = to.visible_projects().find(|p| p.name == "App").unwrap().id;
-        assert_eq!(to.link_for(app), Some("https://sf.example.com/acme"), "uden eget link: kundens");
+        assert_eq!(to.link_for(app).map(|l| l.target), Some("https://sf.example.com/acme"), "uden eget link: kundens");
         assert_eq!(to.import_project_list(&shared), (0, 0, 0), "anden gang er alt der");
 
         // Et tomt link i listen fjerner ikke ens eget.
         assert_eq!(to.import_project_list(&[crate::project_list::ListRow::new("Acme", "Web")]), (0, 0, 0));
-        assert_eq!(to.link_for(web), Some("https://sf.example.com/web"));
+        assert_eq!(to.link_for(web).map(|l| l.target), Some("https://sf.example.com/web"));
     }
 
     #[test]

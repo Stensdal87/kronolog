@@ -1218,8 +1218,8 @@ help.lists:
   da: "Kunder og projekter"
   en: "Customers and projects"
 help.lists_body:
-  da: "• Højreklik på en kunde eller et projekt for at omdøbe eller slette den.\n• 📋 Vis registreringer… i samme menu viser al tid for kunden eller projektet pr. dag, uge, måned eller altid. Der kan du også rette og eksportere.\n• A–Å / Senest skifter rækkefølgen. Søgefeltet (Ctrl+F) finder kunder og projekter.\n• Under ☰ → Nye kunder kan du give alle nye kunder de samme projekter.\n• Slettede projekter forsvinder fra listen, men tiden bliver i historikken.\n• ⭐ Favorit i højrekliksmenuen sætter projektet øverst i listen og i 🔀-vælgeren.\n• ⏳ Timebudget… giver projektet et antal timer. Listen viser, hvor mange procent der er brugt, og under uret kommer en advarsel fra 90 %.\n• 🔗 Link… giver kunden eller projektet et link, f.eks. til Salesforce. Højreklik → Åbn link åbner det, og under Historik → Summeret står det i kolonnen Link (projektets link, ellers kundens).\n• Under ☰ → Del kunder og projekter gemmer du listen med links som en fil, som en kollega kan indlæse."
-  en: "• Right-click a customer or project to rename or delete it.\n• 📋 Show entries… in the same menu shows all time for the customer or project per day, week, month or all time. You can edit and export there too.\n• A–Z / Recent changes the order. The search field (Ctrl+F) finds customers and projects.\n• Under ☰ → New customers you can give all new customers the same projects.\n• Deleted projects disappear from the list, but their time stays in the history.\n• ⭐ Favourite in the right-click menu puts the project at the top of the list and in the 🔀 picker.\n• ⏳ Hour budget… gives the project a number of hours. The list shows the percentage used, and a warning appears under the clock from 90 %.\n• 🔗 Link… gives the customer or project a link, e.g. to Salesforce. Right-click → Open link opens it, and under History → Summary it is in the Link column (the project's link, or else the customer's).\n• Under ☰ → Share customers and projects you save the list with links as a file a colleague can load."
+  da: "• Højreklik på en kunde eller et projekt for at omdøbe eller slette den.\n• 📋 Vis registreringer… i samme menu viser al tid for kunden eller projektet pr. dag, uge, måned eller altid. Der kan du også rette og eksportere.\n• A–Å / Senest skifter rækkefølgen. Søgefeltet (Ctrl+F) finder kunder og projekter.\n• Under ☰ → Nye kunder kan du give alle nye kunder de samme projekter.\n• Slettede projekter forsvinder fra listen, men tiden bliver i historikken.\n• ⭐ Favorit i højrekliksmenuen sætter projektet øverst i listen og i 🔀-vælgeren.\n• ⏳ Timebudget… giver projektet et antal timer. Listen viser, hvor mange procent der er brugt, og under uret kommer en advarsel fra 90 %.\n• 🔗 Link… giver kunden eller projektet et link, f.eks. til Salesforce (og du vælger, om det åbner i standardbrowseren, Edge eller Chrome), eller en mappe i Stifinder. Højreklik → Åbn link åbner det, og under Historik → Summeret står det i kolonnen Link (projektets link, ellers kundens).\n• Under ☰ → Del kunder og projekter gemmer du listen med links som en fil, som en kollega kan indlæse."
+  en: "• Right-click a customer or project to rename or delete it.\n• 📋 Show entries… in the same menu shows all time for the customer or project per day, week, month or all time. You can edit and export there too.\n• A–Z / Recent changes the order. The search field (Ctrl+F) finds customers and projects.\n• Under ☰ → New customers you can give all new customers the same projects.\n• Deleted projects disappear from the list, but their time stays in the history.\n• ⭐ Favourite in the right-click menu puts the project at the top of the list and in the 🔀 picker.\n• ⏳ Hour budget… gives the project a number of hours. The list shows the percentage used, and a warning appears under the clock from 90 %.\n• 🔗 Link… gives the customer or project a link, e.g. to Salesforce (and you choose whether it opens in the default browser, Edge or Chrome), or a folder in File Explorer. Right-click → Open link opens it, and under History → Summary it is in the Link column (the project's link, or else the customer's).\n• Under ☰ → Share customers and projects you save the list with links as a file a colleague can load."
 help.export:
   da: "Eksport til Excel og CSV"
   en: "Export to Excel and CSV"
@@ -1578,8 +1578,8 @@ link.hint:
   da: "https://…"
   en: "https://…"
 link.help:
-  da: "F.eks. til kunden eller projektet i Salesforce, hvor tiden skal registreres. Tomt fjerner linket."
-  en: "E.g. to the customer or project in Salesforce, where the time is registered. Empty removes the link."
+  da: "Et weblink, f.eks. til kunden i Salesforce, hvor tiden skal registreres, eller en mappe, f.eks. C:\\Kunder\\Firma. Tomt fjerner linket."
+  en: "A web link, e.g. to the customer in Salesforce, where the time is registered, or a folder, e.g. C:\\Customers\\Company. Empty removes the link."
 link.inherited:
   da: "Uden eget link bruges kundens: %{link}"
   en: "Without its own link, the customer's is used: %{link}"
@@ -1595,3 +1595,21 @@ share.col_customer_link:
 share.col_project_link:
   da: "Projektlink"
   en: "Project link"
+link.browser_default:
+  da: "Standardbrowser"
+  en: "Default browser"
+link.open_in:
+  da: "Åbn i:"
+  en: "Open in:"
+link.open_folder:
+  da: "📁 Åbn mappe"
+  en: "📁 Open folder"
+link.is_folder:
+  da: "📁 En mappe; åbnes i Stifinder."
+  en: "📁 A folder; opens in File Explorer."
+link.folder_missing:
+  da: "⚠ Mappen findes ikke på denne computer (eller drevet er ikke tilsluttet)."
+  en: "⚠ The folder does not exist on this computer (or the drive is not connected)."
+link.unknown:
+  da: "⚠ Det ligner hverken et weblink eller en mappe."
+  en: "⚠ This looks like neither a web link nor a folder."

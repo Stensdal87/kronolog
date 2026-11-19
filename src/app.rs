@@ -169,7 +169,7 @@ pub struct KronoLogApp {
     /// "Timebudget…": projektet og budgettet i timer, mens det rettes.
     budget_dialog: Option<(Id, f32)>,
     /// "Link…": kunden eller projektet og linket, mens det rettes (#41).
-    link_dialog: Option<(Item, String)>,
+    link_dialog: Option<(Item, String, crate::link::Browser)>,
     /// Besked efter eksport/import af kunde- og projektlisten.
     list_message: Option<String>,
     /// Dagen, hvor den daglige sikkerhedskopi er lavet.
@@ -619,7 +619,7 @@ impl KronoLogApp {
         let mut show_entries = None;
         let mut toggle_favorite = None;
         let mut edit_budget = None;
-        let mut edit_link: Option<(Item, String)> = None;
+        let mut edit_link: Option<(Item, String, crate::link::Browser)> = None;
 
         // Fuld bredde, så rullebjælken bliver i højre side, også når alle
         // kunder er klappet sammen, og listen er smal (#35).
@@ -695,7 +695,7 @@ impl KronoLogApp {
                                         ui.close();
                                     }
                                     if ui.button(tr!("link.edit")).clicked() {
-                                        edit_link = Some((Item::Project(project.id), project.link.clone()));
+                                        edit_link = Some((Item::Project(project.id), project.link.clone(), project.link_browser));
                                         ui.close();
                                     }
                                     ui.separator();
@@ -753,7 +753,7 @@ impl KronoLogApp {
                         ui.close();
                     }
                     if ui.button(tr!("link.edit")).clicked() {
-                        edit_link = Some((Item::Customer(customer.id), customer.link.clone()));
+                        edit_link = Some((Item::Customer(customer.id), customer.link.clone(), customer.link_browser));
                         ui.close();
                     }
                     ui.separator();
@@ -2432,15 +2432,19 @@ impl KronoLogApp {
 
     /// "Link…" for en kunde eller et projekt (#41). Tomt fjerner linket.
     fn link_window(&mut self, ctx: &egui::Context) {
-        let Some((item, mut link)) = self.link_dialog.clone() else { return };
+        use crate::link::{Browser, Kind};
+        let Some((item, mut link, mut browser)) = self.link_dialog.clone() else { return };
         let (mut save, mut close) = (false, false);
         let (title, inherited) = match item {
             Item::Customer(id) => (self.data.customer(id).map(|c| c.name.clone()).unwrap_or_default(), None),
             Item::Project(id) => (
                 self.data.project_label(id),
-                self.data.project(id).and_then(|p| self.data.customer_link(p.customer_id)).map(str::to_owned),
+                self.data.project(id).and_then(|p| self.data.customer_link(p.customer_id)).map(|l| l.target.to_owned()),
             ),
         };
+        let normalized = crate::link::normalize(&link);
+        let kind = crate::link::kind(&normalized);
+        let valid = normalized.is_empty() || kind != Kind::Unknown;
         let modal = egui::Modal::new(egui::Id::unique("link_dialog")).show(ctx, |ui| {
             ui.set_width(300.0);
             ui.heading(tr!("link.title"));
@@ -2452,29 +2456,54 @@ impl KronoLogApp {
             if !ui.memory(|m| m.has_focus(response.id)) && link.is_empty() {
                 response.request_focus();
             }
+            // Hvad linket er, og for weblinks hvor det åbnes.
+            if !normalized.is_empty() {
+                match kind {
+                    Kind::Web => {
+                        ui.horizontal(|ui| {
+                            ui.label(tr!("link.open_in"));
+                            egui::ComboBox::from_id_salt("link_browser").selected_text(browser.label()).show_ui(ui, |ui| {
+                                for choice in Browser::ALL {
+                                    ui.selectable_value(&mut browser, choice, choice.label());
+                                }
+                            });
+                        });
+                    }
+                    Kind::Mail => {}
+                    Kind::Folder if crate::link::folder_exists(&normalized) => {
+                        ui.label(RichText::new(tr!("link.is_folder")).weak().small());
+                    }
+                    Kind::Folder => {
+                        ui.colored_label(ui.visuals().warn_fg_color, RichText::new(tr!("link.folder_missing")).small());
+                    }
+                    Kind::Unknown => {
+                        ui.colored_label(ui.visuals().warn_fg_color, RichText::new(tr!("link.unknown")).small());
+                    }
+                }
+            }
             if let Some(inherited) = &inherited {
                 ui.label(RichText::new(tr!("link.inherited", link = inherited)).weak().small());
             }
             ui.label(RichText::new(tr!("link.help")).weak().small());
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                save |= ui.button(tr!("common.save")).clicked();
+                save |= ui.add_enabled(valid, egui::Button::new(tr!("common.save"))).clicked();
                 close |= ui.button(tr!("common.cancel")).clicked();
             });
-            save |= ui.input(|i| i.key_pressed(egui::Key::Enter));
+            save |= valid && ui.input(|i| i.key_pressed(egui::Key::Enter));
         });
         close |= modal.should_close();
         if save {
             match item {
-                Item::Customer(id) => self.data.set_customer_link(id, &link),
-                Item::Project(id) => self.data.set_project_link(id, &link),
+                Item::Customer(id) => self.data.set_customer_link(id, &link, browser),
+                Item::Project(id) => self.data.set_project_link(id, &link, browser),
             }
             self.save();
             self.link_dialog = None;
         } else if close {
             self.link_dialog = None;
         } else {
-            self.link_dialog = Some((item, link));
+            self.link_dialog = Some((item, link, browser));
         }
     }
 
@@ -3199,26 +3228,24 @@ pub(crate) fn hover_button(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>)
     response
 }
 
-/// "Åbn link" øverst i en højrekliksmenu, når der er et link (#41).
-fn link_menu_item(ui: &mut egui::Ui, link: Option<&str>) {
+/// "Åbn link" / "Åbn mappe" øverst i en højrekliksmenu, når der er et link (#41).
+fn link_menu_item(ui: &mut egui::Ui, link: Option<crate::link::Link>) {
     let Some(link) = link else { return };
-    if ui.button(tr!("link.open")).on_hover_text(link).clicked() {
-        open_link(link);
+    let folder = crate::link::kind(link.target) == crate::link::Kind::Folder;
+    let label = if folder { tr!("link.open_folder") } else { tr!("link.open") };
+    if ui.button(label).on_hover_text(link.target).clicked() {
+        crate::link::open(link);
         ui.close();
     }
     ui.separator();
 }
 
-/// Lille knap, der åbner linket (Historik → Summeret).
-fn link_button(ui: &mut egui::Ui, link: &str) {
-    if hover_button(ui, "🔗").on_hover_text(tr!("link.open_hint", link = link)).clicked() {
-        open_link(link);
-    }
-}
-
-fn open_link(link: &str) {
-    if crate::data::can_open_link(link) {
-        crate::updater::open_page(link);
+/// Lille knap, der åbner linket (Historik → Summeret): 🔗 eller 📁.
+fn link_button(ui: &mut egui::Ui, link: crate::link::Link) {
+    let folder = crate::link::kind(link.target) == crate::link::Kind::Folder;
+    let icon = if folder { "📁" } else { "🔗" };
+    if hover_button(ui, icon).on_hover_text(tr!("link.open_hint", link = link.target)).clicked() {
+        crate::link::open(link);
     }
 }
 

@@ -3,6 +3,12 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.4 (2026-11-19)
+
+- Lange links, f.eks. kopieret fra Edge, åbner nu også på Windows (#41)
+- Ved hvert link kan du vælge, om det åbner i standardbrowseren, Microsoft Edge eller Google Chrome (#41)
+- Et link kan også være en mappe, f.eks. C:\Kunder\Firma, som åbnes i Stifinder (#41)
+
 ## 1.3.3 (2026-11-19)
 
 - KronoLog husker, hvilket projekt et opkald med en kontakt blev registreret på, og foreslår det næste gang, så du blot skal trykke Enter (#39)

@@ -170,15 +170,9 @@ pub fn run_installer(path: &std::path::Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Åbner en side i browseren.
+/// Åbner en side i browseren (eller en mappe).
 pub fn open_page(url: &str) {
-    #[cfg(windows)]
-    let result = std::process::Command::new("explorer").arg(url).spawn();
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(url).spawn();
-    #[cfg(not(any(windows, target_os = "macos")))]
-    let result = std::process::Command::new("xdg-open").arg(url).spawn();
-    let _ = result;
+    crate::link::open_default(url);
 }
 
 fn agent() -> ureq::Agent {
