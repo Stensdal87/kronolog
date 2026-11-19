@@ -3,9 +3,11 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
-## 1.3.3
+## 1.3.3 (2026-11-19)
 
 - KronoLog remembers which project a call with a contact was registered on and suggests it next time, so you only have to press Enter (#39)
+- Customers and projects can have a link, e.g. to Salesforce, which opens from the right-click menu and from the new Link column in History → Summary (#41). The links are included when you share the customer and project list
+- It is easier to see what can be clicked in the history: the rounded time, the link, ⚠ and the week's times get a blue background and a hand cursor when the mouse is over them
 - The name from Teams is now also found when Teams is signed in with several accounts, and for meetings the meeting title is used (#39)
 
 ## 1.3.2 (2026-11-17)

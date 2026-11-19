@@ -98,7 +98,7 @@ impl KronoLogApp {
                             }
                         };
                         let hover = format!("{full}\n{}\n{hover}", date.format("%d-%m-%Y"));
-                        if ui.add(egui::Button::new(text).frame(false)).on_hover_text(hover).clicked() {
+                        if super::hover_button(ui, text).on_hover_text(hover).clicked() {
                             // Ændret tid krydses af med den nye; ellers skiftes krydset.
                             let bill = state != BilledState::Yes;
                             toggle = Some((date, *project_id, bill.then_some(time)));

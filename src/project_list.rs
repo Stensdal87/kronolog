@@ -1,14 +1,39 @@
 //! Deling af kunde- og projektlisten mellem kolleger som CSV: én linje pr.
-//! projekt, `Kunde;Projekt`. Filen kan også laves eller rettes i Excel.
-//! Ved indlæsning accepteres semikolon, komma og tabulator, med eller uden
-//! overskrift og citationstegn.
+//! projekt, `Kunde;Projekt;Kundelink;Projektlink` (links fra #41; filer med
+//! kun de to første kolonner kan stadig indlæses). Filen kan også laves eller
+//! rettes i Excel. Ved indlæsning accepteres semikolon, komma og tabulator,
+//! med eller uden overskrift og citationstegn.
+
+/// Én linje i den delte liste. Kundens link står på hver af kundens linjer.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ListRow {
+    pub customer: String,
+    pub project: String,
+    pub customer_link: String,
+    pub project_link: String,
+}
+
+impl ListRow {
+    #[cfg(test)]
+    pub fn new(customer: &str, project: &str) -> Self {
+        Self { customer: customer.to_owned(), project: project.to_owned(), ..Default::default() }
+    }
+}
 
 /// Listen som CSV med overskrift. Semikolon, så Excel med dansk opsætning
-/// åbner den i to kolonner.
-pub fn to_csv(list: &[(String, String)]) -> String {
-    let mut csv = format!("{};{}\r\n", tr!("common.customer"), tr!("common.project"));
-    for (customer, project) in list {
-        csv.push_str(&format!("{};{}\r\n", quote(customer), quote(project)));
+/// åbner den i kolonner.
+pub fn to_csv(list: &[ListRow]) -> String {
+    let mut csv = format!(
+        "{};{};{};{}\r\n",
+        tr!("common.customer"),
+        tr!("common.project"),
+        tr!("share.col_customer_link"),
+        tr!("share.col_project_link")
+    );
+    for row in list {
+        let fields = [&row.customer, &row.project, &row.customer_link, &row.project_link];
+        csv.push_str(&fields.map(|f| quote(f)).join(";"));
+        csv.push_str("\r\n");
     }
     csv
 }
@@ -17,9 +42,9 @@ fn quote(field: &str) -> String {
     if field.contains([';', ',', '"', '\n']) { format!("\"{}\"", field.replace('"', "\"\"")) } else { field.to_owned() }
 }
 
-/// Par af (kunde, projekt) fra en CSV-fil. Tomme linjer og en overskrift
-/// ("Kunde;Projekt" eller "Customer;Project") springes over.
-pub fn parse_csv(text: &str) -> Vec<(String, String)> {
+/// Linjerne i en CSV-fil. Tomme linjer og en overskrift ("Kunde;Projekt…"
+/// eller "Customer;Project…") springes over; manglende kolonner er tomme.
+pub fn parse_csv(text: &str) -> Vec<ListRow> {
     let text = text.trim_start_matches('\u{FEFF}');
     let delimiter = [';', '\t', ',']
         .into_iter()
@@ -30,7 +55,10 @@ pub fn parse_csv(text: &str) -> Vec<(String, String)> {
         .map(|line| split(line, delimiter))
         .filter(|fields| !fields.is_empty() && !fields[0].trim().is_empty())
         .filter(|fields| !headers.contains(&fields[0].trim().to_lowercase().as_str()))
-        .map(|fields| (fields[0].trim().to_owned(), fields.get(1).map(|p| p.trim().to_owned()).unwrap_or_default()))
+        .map(|fields| {
+            let field = |i: usize| fields.get(i).map(|f| f.trim().to_owned()).unwrap_or_default();
+            ListRow { customer: field(0), project: field(1), customer_link: field(2), project_link: field(3) }
+        })
         .collect()
 }
 
@@ -60,9 +88,13 @@ mod tests {
     #[test]
     fn list_survives_a_round_trip() {
         let list = vec![
-            ("Kunde A".to_owned(), "Support".to_owned()),
-            ("Kunde; B".to_owned(), "Projekt \"X\"".to_owned()),
-            ("Kunde C".to_owned(), String::new()),
+            ListRow {
+                customer_link: "https://firma.my.salesforce.com/a?x=1;y=2".into(),
+                project_link: "https://firma.my.salesforce.com/p,1".into(),
+                ..ListRow::new("Kunde A", "Support")
+            },
+            ListRow::new("Kunde; B", "Projekt \"X\""),
+            ListRow::new("Kunde C", ""),
         ];
         assert_eq!(parse_csv(&to_csv(&list)), list);
     }
@@ -70,11 +102,8 @@ mod tests {
     #[test]
     fn reads_files_made_in_excel_with_other_separators() {
         let comma = "Customer,Project\nAcme,Web\n\nAcme,App\n";
-        assert_eq!(
-            parse_csv(comma),
-            vec![("Acme".into(), "Web".into()), ("Acme".into(), "App".into())]
-        );
+        assert_eq!(parse_csv(comma), vec![ListRow::new("Acme", "Web"), ListRow::new("Acme", "App")]);
         let tabs = "\u{FEFF}Kunde\tProjekt\nFirma\tDrift\nKun kunde\n";
-        assert_eq!(parse_csv(tabs), vec![("Firma".into(), "Drift".into()), ("Kun kunde".into(), String::new())]);
+        assert_eq!(parse_csv(tabs), vec![ListRow::new("Firma", "Drift"), ListRow::new("Kun kunde", "")]);
     }
 }

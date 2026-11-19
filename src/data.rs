@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 
+use crate::project_list::ListRow;
+
 pub type Id = u64;
 
 pub const NOTE_PHONE: &str = "Telefon";
@@ -24,6 +26,9 @@ pub struct Customer {
     /// Slettede kunder skjules, men beholdes så historikken stadig kan vise navnet.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deleted: bool,
+    /// Link til kunden, f.eks. i Salesforce, hvor tiden skal registreres (#41).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub link: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -40,6 +45,26 @@ pub struct Project {
     /// Timebudget i minutter; der advares, når tiden nærmer sig.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_minutes: Option<u32>,
+    /// Link til projektet; ellers bruges kundens (#41).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub link: String,
+}
+
+/// Et link, som brugeren har skrevet: uden "https://" foran lægges det til,
+/// så "firma.lightning.force.com/…" også virker.
+pub fn normalize_link(link: &str) -> String {
+    let link = link.trim();
+    if link.is_empty() || link.contains("://") || link.starts_with("mailto:") {
+        link.to_owned()
+    } else {
+        format!("https://{link}")
+    }
+}
+
+/// Kun web- og mail-links åbnes, så et link aldrig kan starte et program.
+pub fn can_open_link(link: &str) -> bool {
+    let lower = link.to_lowercase();
+    ["https://", "http://", "mailto:"].iter().any(|p| lower.starts_with(p))
 }
 
 /// En afsluttet tidsregistrering.
@@ -452,7 +477,7 @@ impl Data {
 
     pub fn add_customer(&mut self, name: &str) -> Id {
         let id = self.new_id();
-        self.customers.push(Customer { id, name: name.to_owned(), deleted: false });
+        self.customers.push(Customer { id, name: name.to_owned(), deleted: false, link: String::new() });
         id
     }
 
@@ -465,6 +490,7 @@ impl Data {
             deleted: false,
             favorite: false,
             budget_minutes: None,
+            link: String::new(),
         });
         id
     }
@@ -483,6 +509,29 @@ impl Data {
     }
 
     /// Sætter projektets timebudget (`None` eller 0 fjerner det).
+    /// Linket til et projekt: projektets eget, ellers kundens (#41).
+    pub fn link_for(&self, project_id: Id) -> Option<&str> {
+        let project = self.project(project_id)?;
+        let link = if project.link.is_empty() { &self.customer(project.customer_id)?.link } else { &project.link };
+        (!link.is_empty()).then_some(link.as_str())
+    }
+
+    pub fn customer_link(&self, customer_id: Id) -> Option<&str> {
+        self.customer(customer_id).map(|c| c.link.as_str()).filter(|l| !l.is_empty())
+    }
+
+    pub fn set_customer_link(&mut self, customer_id: Id, link: &str) {
+        if let Some(c) = self.customers.iter_mut().find(|c| c.id == customer_id) {
+            c.link = normalize_link(link);
+        }
+    }
+
+    pub fn set_project_link(&mut self, project_id: Id, link: &str) {
+        if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
+            p.link = normalize_link(link);
+        }
+    }
+
     pub fn set_budget(&mut self, project_id: Id, minutes: Option<u32>) {
         if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
             p.budget_minutes = minutes.filter(|m| *m > 0);
@@ -497,25 +546,33 @@ impl Data {
 
     /// Kunder og projekter som par (kunde, projekt) til deling med kolleger;
     /// en kunde uden projekter giver (kunde, ""). Ikke den interne kunde.
-    pub fn project_list(&self) -> Vec<(String, String)> {
+    pub fn project_list(&self) -> Vec<ListRow> {
         let mut list = Vec::new();
         for customer in self.visible_customers().filter(|c| !self.is_internal_customer(c.id)) {
+            let row = |project: &str, project_link: &str| ListRow {
+                customer: customer.name.clone(),
+                project: project.to_owned(),
+                customer_link: customer.link.clone(),
+                project_link: project_link.to_owned(),
+            };
             let projects = self.customer_projects(customer.id);
             if projects.is_empty() {
-                list.push((customer.name.clone(), String::new()));
+                list.push(row("", ""));
             }
-            list.extend(projects.into_iter().map(|p| (customer.name.clone(), p.name.clone())));
+            list.extend(projects.into_iter().map(|p| row(&p.name, &p.link)));
         }
         list
     }
 
     /// Tilføjer de kunder og projekter fra en delt liste, der mangler (navne
     /// sammenlignes uden hensyn til store/små bogstaver). Nye kunder får ikke
-    /// skabelonens projekter. Giver antal nye kunder og projekter.
-    pub fn import_project_list(&mut self, list: &[(String, String)]) -> (usize, usize) {
-        let (mut customers, mut projects) = (0, 0);
-        for (customer, project) in list {
-            let (customer, project) = (customer.trim(), project.trim());
+    /// skabelonens projekter. Links i listen sættes, også på kunder og
+    /// projekter, man har i forvejen; et tomt link fjerner ikke ens eget (#41).
+    /// Giver antal nye kunder, nye projekter og nye eller ændrede links.
+    pub fn import_project_list(&mut self, list: &[ListRow]) -> (usize, usize, usize) {
+        let (mut customers, mut projects, mut links) = (0, 0, 0);
+        for row in list {
+            let (customer, project) = (row.customer.trim(), row.project.trim());
             if customer.is_empty() {
                 continue;
             }
@@ -527,14 +584,33 @@ impl Data {
                     self.add_customer(customer)
                 }
             };
-            if !project.is_empty()
-                && !self.visible_projects().any(|p| p.customer_id == customer_id && same_name(&p.name, project))
+            let link = normalize_link(&row.customer_link);
+            if let Some(c) = self.customers.iter_mut().find(|c| c.id == customer_id)
+                && !link.is_empty()
+                && c.link != link
             {
-                self.add_project(customer_id, project);
+                c.link = link;
+                links += 1;
+            }
+            if project.is_empty() {
+                continue;
+            }
+            let existing =
+                self.visible_projects().find(|p| p.customer_id == customer_id && same_name(&p.name, project)).map(|p| p.id);
+            let project_id = existing.unwrap_or_else(|| {
                 projects += 1;
+                self.add_project(customer_id, project)
+            });
+            let link = normalize_link(&row.project_link);
+            if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id)
+                && !link.is_empty()
+                && p.link != link
+            {
+                p.link = link;
+                links += 1;
             }
         }
-        (customers, projects)
+        (customers, projects, links)
     }
 
     /// Dagens arbejdstid (uden pauser), til dagsmålet.
@@ -1525,6 +1601,22 @@ mod tests {
     }
 
     #[test]
+    fn project_link_falls_back_to_the_customer_link() {
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        let p = data.add_project(c, "A");
+        assert_eq!(data.link_for(p), None);
+        data.set_customer_link(c, " firma.my.salesforce.com/kunde ");
+        assert_eq!(data.link_for(p), Some("https://firma.my.salesforce.com/kunde"));
+        data.set_project_link(p, "https://firma.my.salesforce.com/projekt?id=1&x=2");
+        assert_eq!(data.link_for(p), Some("https://firma.my.salesforce.com/projekt?id=1&x=2"));
+        data.set_project_link(p, "  ");
+        assert_eq!(data.link_for(p), Some("https://firma.my.salesforce.com/kunde"), "tomt fjerner projektets link");
+        assert!(can_open_link("HTTPS://x.dk") && can_open_link("mailto:a@b.dk"));
+        assert!(!can_open_link("file:///C:/Windows/system32/calc.exe") && !can_open_link("C:\\x.exe"));
+    }
+
+    #[test]
     fn the_project_for_a_caller_is_remembered_and_suggested() {
         let mut data = Data::default();
         let c = data.add_customer("Kunde");
@@ -2081,18 +2173,44 @@ mod tests {
         let mut data = Data::default();
         let c = data.add_customer("Acme");
         data.add_project(c, "Web");
-        let list: Vec<(String, String)> = [("acme", "web"), ("Acme", "App"), ("Ny", ""), ("Ny", "Drift"), ("", "x")]
+        let list: Vec<ListRow> = [("acme", "web"), ("Acme", "App"), ("Ny", ""), ("Ny", "Drift"), ("", "x")]
             .into_iter()
-            .map(|(a, b)| (a.to_owned(), b.to_owned()))
+            .map(|(a, b)| ListRow::new(a, b))
             .collect();
-        assert_eq!(data.import_project_list(&list), (1, 2), "Ny + App og Drift");
-        assert_eq!(data.import_project_list(&list), (0, 0), "anden gang er alt der");
+        assert_eq!(data.import_project_list(&list), (1, 2, 0), "Ny + App og Drift");
+        assert_eq!(data.import_project_list(&list), (0, 0, 0), "anden gang er alt der");
 
         // Eksporten indeholder ikke den interne kunde.
         data.internal_project_id();
         let exported = data.project_list();
-        assert!(exported.contains(&("Acme".into(), "App".into())));
-        assert!(exported.iter().all(|(customer, _)| customer != &data.customers[data.customers.len() - 1].name));
+        assert!(exported.contains(&ListRow::new("Acme", "App")));
+        assert!(exported.iter().all(|row| row.customer != data.customers[data.customers.len() - 1].name));
+    }
+
+    #[test]
+    fn links_are_shared_with_the_list() {
+        let mut from = Data::default();
+        let c = from.add_customer("Acme");
+        let p = from.add_project(c, "Web");
+        from.add_project(c, "App");
+        from.set_customer_link(c, "sf.example.com/acme");
+        from.set_project_link(p, "https://sf.example.com/web");
+        let shared = crate::project_list::parse_csv(&crate::project_list::to_csv(&from.project_list()));
+
+        let mut to = Data::default();
+        let mine = to.add_customer("ACME");
+        let web = to.add_project(mine, "web");
+        to.set_project_link(web, "https://old.example.com");
+        assert_eq!(to.import_project_list(&shared), (0, 1, 2), "App er ny; kundens og Webs link");
+        assert_eq!(to.customer_link(mine), Some("https://sf.example.com/acme"));
+        assert_eq!(to.link_for(web), Some("https://sf.example.com/web"), "et ændret link opdateres");
+        let app = to.visible_projects().find(|p| p.name == "App").unwrap().id;
+        assert_eq!(to.link_for(app), Some("https://sf.example.com/acme"), "uden eget link: kundens");
+        assert_eq!(to.import_project_list(&shared), (0, 0, 0), "anden gang er alt der");
+
+        // Et tomt link i listen fjerner ikke ens eget.
+        assert_eq!(to.import_project_list(&[crate::project_list::ListRow::new("Acme", "Web")]), (0, 0, 0));
+        assert_eq!(to.link_for(web), Some("https://sf.example.com/web"));
     }
 
     #[test]

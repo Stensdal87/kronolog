@@ -3,9 +3,11 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
-## 1.3.3
+## 1.3.3 (2026-11-19)
 
 - KronoLog husker, hvilket projekt et opkald med en kontakt blev registreret på, og foreslår det næste gang, så du blot skal trykke Enter (#39)
+- Kunder og projekter kan få et link, f.eks. til Salesforce, som åbnes fra højrekliksmenuen og fra den nye kolonne Link i Historik → Summeret (#41). Linkene kommer med, når I deler kunde- og projektlisten
+- Det er lettere at se, hvad der kan klikkes på i historikken: den afrundede tid, linket, ⚠ og ugens tider får en blå baggrund og en hånd som markør, når musen er over dem
 - Navnet fra Teams findes nu også, når Teams er logget ind med flere konti, og ved møder bruges mødets titel (#39)
 
 ## 1.3.2 (2026-11-17)

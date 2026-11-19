@@ -168,6 +168,8 @@ pub struct KronoLogApp {
     forgot_hold_until: Option<DateTime<Local>>,
     /// "Timebudget…": projektet og budgettet i timer, mens det rettes.
     budget_dialog: Option<(Id, f32)>,
+    /// "Link…": kunden eller projektet og linket, mens det rettes (#41).
+    link_dialog: Option<(Item, String)>,
     /// Besked efter eksport/import af kunde- og projektlisten.
     list_message: Option<String>,
     /// Dagen, hvor den daglige sikkerhedskopi er lavet.
@@ -300,6 +302,7 @@ impl KronoLogApp {
             changelog: None,
             backed_up_on: None,
             budget_dialog: None,
+            link_dialog: None,
             list_message: None,
             present_since: None,
             forgot_checked: None,
@@ -616,6 +619,7 @@ impl KronoLogApp {
         let mut show_entries = None;
         let mut toggle_favorite = None;
         let mut edit_budget = None;
+        let mut edit_link: Option<(Item, String)> = None;
 
         // Fuld bredde, så rullebjælken bliver i højre side, også når alle
         // kunder er klappet sammen, og listen er smal (#35).
@@ -642,6 +646,7 @@ impl KronoLogApp {
                                 start_project = Some(project.id);
                             }
                             response.context_menu(|ui| {
+                                link_menu_item(ui, self.data.link_for(project.id));
                                 if ui.button(tr!("favorites.remove")).clicked() {
                                     toggle_favorite = Some(project.id);
                                     ui.close();
@@ -675,6 +680,7 @@ impl KronoLogApp {
                                     start_project = Some(project.id);
                                 }
                                 response.context_menu(|ui| {
+                                    link_menu_item(ui, self.data.link_for(project.id));
                                     if ui.button(tr!("item.show")).clicked() {
                                         show_entries = Some(Scope::Project(project.id));
                                         ui.close();
@@ -686,6 +692,10 @@ impl KronoLogApp {
                                     }
                                     if ui.button(tr!("budget.menu")).clicked() {
                                         edit_budget = Some(project.id);
+                                        ui.close();
+                                    }
+                                    if ui.button(tr!("link.edit")).clicked() {
+                                        edit_link = Some((Item::Project(project.id), project.link.clone()));
                                         ui.close();
                                     }
                                     ui.separator();
@@ -737,8 +747,13 @@ impl KronoLogApp {
                         });
                     });
                 header.header_response.context_menu(|ui| {
+                    link_menu_item(ui, self.data.customer_link(customer.id));
                     if ui.button(tr!("item.show")).clicked() {
                         show_entries = Some(Scope::Customer(customer.id));
+                        ui.close();
+                    }
+                    if ui.button(tr!("link.edit")).clicked() {
+                        edit_link = Some((Item::Customer(customer.id), customer.link.clone()));
                         ui.close();
                     }
                     ui.separator();
@@ -805,6 +820,9 @@ impl KronoLogApp {
         if let Some(id) = toggle_favorite {
             self.data.toggle_favorite(id);
             self.save();
+        }
+        if edit_link.is_some() {
+            self.link_dialog = edit_link;
         }
         if let Some(id) = edit_budget {
             let hours = self.data.project(id).and_then(|p| p.budget_minutes).map_or(0.0, |m| m as f32 / 60.0);
@@ -1103,8 +1121,11 @@ impl KronoLogApp {
         let date = self.history_date;
 
         // Projektnavnet afkortes, så tid, afrundet tid og flueben kan ses i det
-        // smalle vindue (ca. 7 px pr. tegn; resten af rækken fylder ca. 210 px).
-        let label_chars = ((ui.available_width() - 210.0) / 7.0).max(12.0) as usize;
+        // smalle vindue (ca. 7 px pr. tegn; resten af rækken fylder ca. 210 px,
+        // og linkkolonnen ca. 26 px mere).
+        let any_link = totals.iter().any(|(id, _)| self.data.link_for(*id).is_some());
+        let rest = if any_link { 236.0 } else { 210.0 };
+        let label_chars = ((ui.available_width() - rest) / 7.0).max(12.0) as usize;
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("history").striped(true).show(ui, |ui| {
                 match self.history_view {
@@ -1115,6 +1136,9 @@ impl KronoLogApp {
                         ui.label(RichText::new(tr!("history.col_time")).weak().small());
                         ui.label(RichText::new(tr!("history.col_rounded")).weak().small())
                             .on_hover_text(tr!("history.col_rounded_hint"));
+                        if any_link {
+                            ui.label(RichText::new(tr!("link.col")).weak().small()).on_hover_text(tr!("link.col_hint"));
+                        }
                         ui.end_row();
                         for (project_id, d) in &totals {
                             let count = entries.iter().filter(|e| e.entry.project_id == *project_id).count();
@@ -1156,7 +1180,7 @@ impl KronoLogApp {
                                         let warn = RichText::new(format!("⚠ {sign}{}", format_hours_minutes(amount)))
                                             .small()
                                             .color(ui.visuals().warn_fg_color);
-                                        let warning = ui.add(egui::Button::new(warn).frame(false)).on_hover_text(&hover);
+                                        let warning = hover_button(ui, warn).on_hover_text(&hover);
                                         if warning.clicked() {
                                             set_billed = Some((*project_id, Some(r.time)));
                                         }
@@ -1183,6 +1207,7 @@ impl KronoLogApp {
                                     format!("{full}\n{}\n• {}", tr!("history.notes"), notes.join("\n• "))
                                 });
                                 response.context_menu(|ui| {
+                                    link_menu_item(ui, self.data.link_for(*project_id));
                                     if ui.button(tr!("item.show")).clicked() {
                                         show_entries = Some(Scope::Project(*project_id));
                                         ui.close();
@@ -1212,12 +1237,16 @@ impl KronoLogApp {
                                 ),
                             };
                             if r.can_toggle {
-                                let response = ui.add(egui::Button::new(text).frame(false)).on_hover_text(hover);
+                                let response = hover_button(ui, text).on_hover_text(hover);
                                 if response.clicked() {
                                     toggle_rounding = Some(*project_id);
                                 }
                             } else {
                                 ui.label(text).on_hover_text(hover);
+                            }
+                            // Link til fx Salesforce, hvor tiden skal registreres (#41).
+                            if let Some(link) = self.data.link_for(*project_id) {
+                                link_button(ui, link);
                             }
                             ui.end_row();
 
@@ -1553,6 +1582,7 @@ impl eframe::App for KronoLogApp {
         self.sleep_dialog(&ctx);
         self.forgot_dialog(&ctx);
         self.budget_window(&ctx);
+        self.link_window(&ctx);
         self.break_dialog(&ctx);
         self.breathing_window(&ctx);
         self.new_exercise_dialog(&ctx);
@@ -2021,6 +2051,7 @@ impl KronoLogApp {
             || self.restore_prompt.is_some()
             || self.forgot_prompt.is_some()
             || self.budget_dialog.is_some()
+            || self.link_dialog.is_some()
     }
 
     /// Udfører en handling fra en genvejstast. `global` er når genvejen blev
@@ -2391,12 +2422,60 @@ impl KronoLogApp {
         self.list_message = Some(match std::fs::read(&path) {
             Ok(bytes) => {
                 let list = crate::project_list::parse_csv(&String::from_utf8_lossy(&bytes));
-                let (customers, projects) = self.data.import_project_list(&list);
+                let (customers, projects, links) = self.data.import_project_list(&list);
                 self.save();
-                tr!("share.imported", customers = customers, projects = projects)
+                tr!("share.imported", customers = customers, projects = projects, links = links)
             }
             Err(e) => tr!("share.err", error = e),
         });
+    }
+
+    /// "Link…" for en kunde eller et projekt (#41). Tomt fjerner linket.
+    fn link_window(&mut self, ctx: &egui::Context) {
+        let Some((item, mut link)) = self.link_dialog.clone() else { return };
+        let (mut save, mut close) = (false, false);
+        let (title, inherited) = match item {
+            Item::Customer(id) => (self.data.customer(id).map(|c| c.name.clone()).unwrap_or_default(), None),
+            Item::Project(id) => (
+                self.data.project_label(id),
+                self.data.project(id).and_then(|p| self.data.customer_link(p.customer_id)).map(str::to_owned),
+            ),
+        };
+        let modal = egui::Modal::new(egui::Id::unique("link_dialog")).show(ctx, |ui| {
+            ui.set_width(300.0);
+            ui.heading(tr!("link.title"));
+            ui.label(RichText::new(title).strong());
+            ui.add_space(6.0);
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut link).hint_text(tr!("link.hint")).desired_width(f32::INFINITY),
+            );
+            if !ui.memory(|m| m.has_focus(response.id)) && link.is_empty() {
+                response.request_focus();
+            }
+            if let Some(inherited) = &inherited {
+                ui.label(RichText::new(tr!("link.inherited", link = inherited)).weak().small());
+            }
+            ui.label(RichText::new(tr!("link.help")).weak().small());
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                save |= ui.button(tr!("common.save")).clicked();
+                close |= ui.button(tr!("common.cancel")).clicked();
+            });
+            save |= ui.input(|i| i.key_pressed(egui::Key::Enter));
+        });
+        close |= modal.should_close();
+        if save {
+            match item {
+                Item::Customer(id) => self.data.set_customer_link(id, &link),
+                Item::Project(id) => self.data.set_project_link(id, &link),
+            }
+            self.save();
+            self.link_dialog = None;
+        } else if close {
+            self.link_dialog = None;
+        } else {
+            self.link_dialog = Some((item, link));
+        }
     }
 
     /// "Timebudget…" for et projekt: antal timer (0 fjerner budgettet).
@@ -3105,6 +3184,44 @@ fn fold_button(ui: &mut egui::Ui, vertical: bool) -> egui::Response {
 
 /// Overskrift for en sektion i indstillingerne, med en streg over, så
 /// sektionerne er nemme at skelne fra hinanden (#15).
+/// En knap uden ramme, der kan klikkes på (afrundet tid, link, ⚠): under musen
+/// får den en svag baggrund i accentfarven og en hånd som markør, så man kan se,
+/// at der sker noget ved klik. Baggrunden tegnes bag teksten uden at ændre
+/// størrelsen, så kolonnerne ikke flytter sig.
+pub(crate) fn hover_button(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    let background = ui.painter().add(egui::Shape::Noop);
+    let response = ui.add(egui::Button::new(text).frame(false)).on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.hovered() {
+        let alpha = if ui.visuals().dark_mode { 0.35 } else { 0.25 };
+        let rect = response.rect.expand2(Vec2::new(3.0, 1.0));
+        ui.painter().set(background, egui::Shape::rect_filled(rect, 3.0, ACCENT.gamma_multiply(alpha)));
+    }
+    response
+}
+
+/// "Åbn link" øverst i en højrekliksmenu, når der er et link (#41).
+fn link_menu_item(ui: &mut egui::Ui, link: Option<&str>) {
+    let Some(link) = link else { return };
+    if ui.button(tr!("link.open")).on_hover_text(link).clicked() {
+        open_link(link);
+        ui.close();
+    }
+    ui.separator();
+}
+
+/// Lille knap, der åbner linket (Historik → Summeret).
+fn link_button(ui: &mut egui::Ui, link: &str) {
+    if hover_button(ui, "🔗").on_hover_text(tr!("link.open_hint", link = link)).clicked() {
+        open_link(link);
+    }
+}
+
+fn open_link(link: &str) {
+    if crate::data::can_open_link(link) {
+        crate::updater::open_page(link);
+    }
+}
+
 fn settings_section(ui: &mut egui::Ui, title: String) {
     ui.add_space(8.0);
     ui.separator();
@@ -3231,6 +3348,43 @@ fn move_button(ui: &mut egui::Ui) -> egui::Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tegner en `hover_button` med musen ved `pointer` og giver knappens
+    /// felt og om der blev tegnet en baggrund i accentfarven.
+    fn hover_frame(ctx: &egui::Context, pointer: Option<Pos2>) -> (egui::Rect, bool) {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 200.0))),
+            ..Default::default()
+        };
+        if let Some(pos) = pointer {
+            input.events.push(egui::Event::PointerMoved(pos));
+        }
+        let mut rect = egui::Rect::NOTHING;
+        let output = ctx.run_ui(input, |ui| {
+            rect = hover_button(ui, "0:15").rect;
+        });
+        let accent = |c: Color32| c.a() > 0 && c.r() < c.b() && c.b() > c.g();
+        let painted = output.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(r) => accent(r.fill),
+            _ => false,
+        });
+        output.drop_without_applying_deltas();
+        (rect, painted)
+    }
+
+    #[test]
+    fn hover_button_gets_a_background_only_under_the_mouse() {
+        for dark in [false, true] {
+            let ctx = egui::Context::default();
+            ctx.set_visuals(if dark { egui::Visuals::dark() } else { egui::Visuals::light() });
+            let (rect, painted) = hover_frame(&ctx, None);
+            assert!(!painted, "ingen baggrund i hvile");
+            let (_, painted) = hover_frame(&ctx, Some(rect.center()));
+            assert!(painted, "baggrund under musen (dark: {dark})");
+            let (again, _) = hover_frame(&ctx, Some(rect.center()));
+            assert_eq!(again, rect, "størrelsen ændres ikke");
+        }
+    }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> egui::Rect {
         egui::Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h))
