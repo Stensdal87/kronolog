@@ -3,6 +3,10 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.5 (2026-11-20)
+
+- New "Hours" column in the Summary history: the rounded time as a decimal number, e.g. 1.75 for 1:45. Click the number to copy it (#42)
+
 ## 1.3.4 (2026-11-19)
 
 - Long links, e.g. copied from Edge, now also open on Windows (#41)

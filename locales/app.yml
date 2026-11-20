@@ -1206,8 +1206,8 @@ help.history:
   da: "Historik og rettelser"
   en: "History and corrections"
 help.history_body:
-  da: "• 📅 Historik viser én dag ad gangen. Skift dag med pilene øverst.\n• Summeret viser tiden pr. projekt. Klik på ⏵ for at se dagens registreringer for projektet.\n• Klik på en registrering for at rette tid, projekt, type eller note. Der kan du også slette den.\n• ✂ Del op i rettevinduet deler en registrering i to, f.eks. hvis du glemte at skifte projekt.\n• ➕ tilføjer en registrering, du har glemt. ⏷ ved tiden viser hver halve time, og \"min\" er varigheden. Projektlisten kan søges i, og \"+ Ny kunde…\" opretter kunden med skabelonens projekter med det samme.\n• Under Alle står huller i dagen med orange: \"+ Ikke registreret\". Klik for at udfylde hullet.\n• Uge viser ugen som et timeregnskab med afrundet tid pr. projekt og dag. Klik på en tid for at krydse den af."
-  en: "• 📅 History shows one day at a time. Change day with the arrows at the top.\n• Summary shows the time per project. Click ⏵ to see the day's entries for the project.\n• Click an entry to change its time, project, type or note. You can also delete it there.\n• ✂ Split in the edit window splits an entry in two, e.g. if you forgot to switch project.\n• ➕ adds an entry you forgot. ⏷ next to the time lists every half hour, and \"min\" is the duration. The project list can be searched, and \"+ New customer…\" creates the customer with the template's projects right away.\n• Under All, gaps in the day are shown in orange: \"+ Not recorded\". Click to fill the gap.\n• Week shows the week as a timesheet with rounded time per project and day. Click a time to tick it off."
+  da: "• 📅 Historik viser én dag ad gangen. Skift dag med pilene øverst.\n• Summeret viser tiden pr. projekt. Klik på ⏵ for at se dagens registreringer for projektet.\n• Timer viser den afrundede tid som kommatal til CMS, f.eks. 1,75 for 1:45. Klik på tallet for at kopiere det.\n• Klik på en registrering for at rette tid, projekt, type eller note. Der kan du også slette den.\n• ✂ Del op i rettevinduet deler en registrering i to, f.eks. hvis du glemte at skifte projekt.\n• ➕ tilføjer en registrering, du har glemt. ⏷ ved tiden viser hver halve time, og \"min\" er varigheden. Projektlisten kan søges i, og \"+ Ny kunde…\" opretter kunden med skabelonens projekter med det samme.\n• Under Alle står huller i dagen med orange: \"+ Ikke registreret\". Klik for at udfylde hullet.\n• Uge viser ugen som et timeregnskab med afrundet tid pr. projekt og dag. Klik på en tid for at krydse den af."
+  en: "• 📅 History shows one day at a time. Change day with the arrows at the top.\n• Summary shows the time per project. Click ⏵ to see the day's entries for the project.\n• Hours shows the rounded time as a decimal number, e.g. 1.75 for 1:45. Click the number to copy it.\n• Click an entry to change its time, project, type or note. You can also delete it there.\n• ✂ Split in the edit window splits an entry in two, e.g. if you forgot to switch project.\n• ➕ adds an entry you forgot. ⏷ next to the time lists every half hour, and \"min\" is the duration. The project list can be searched, and \"+ New customer…\" creates the customer with the template's projects right away.\n• Under All, gaps in the day are shown in orange: \"+ Not recorded\". Click to fill the gap.\n• Week shows the week as a timesheet with rounded time per project and day. Click a time to tick it off."
 help.billing:
   da: "Afrunding og afkrydsning"
   en: "Rounding and ticking off"
@@ -1613,3 +1613,15 @@ link.folder_missing:
 link.unknown:
   da: "⚠ Det ligner hverken et weblink eller en mappe."
   en: "⚠ This looks like neither a web link nor a folder."
+history.col_decimal:
+  da: "Timer"
+  en: "Hours"
+history.col_decimal_hint:
+  da: "Den afrundede tid som kommatal til CMS, fx 1,75 for 1:45"
+  en: "The rounded time as a decimal number, e.g. 1.75 for 1:45"
+history.decimal_copy_hint:
+  da: "%{hours} timer – klik for at kopiere"
+  en: "%{hours} hours – click to copy"
+history.decimal_separator:
+  da: ","
+  en: "."

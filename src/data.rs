@@ -1467,6 +1467,12 @@ pub fn format_hours_minutes(d: Duration) -> String {
     format!("{}:{:02}", mins / 60, mins % 60)
 }
 
+/// Tiden som kommatal i timer med to decimaler, fx 1:45 → "1,75" (#42).
+pub fn format_decimal_hours(d: Duration, separator: &str) -> String {
+    let hundredths = (d.num_minutes().max(0) * 100 + 30) / 60;
+    format!("{}{separator}{:02}", hundredths / 100, hundredths % 100)
+}
+
 pub fn format_duration(d: Duration) -> String {
     let secs = d.num_seconds().max(0);
     format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
@@ -1476,6 +1482,17 @@ pub fn format_duration(d: Duration) -> String {
 mod tests {
     use super::*;
     use chrono::{Datelike, TimeZone};
+
+    #[test]
+    fn decimal_hours_for_the_cms() {
+        let h = |m| format_decimal_hours(Duration::minutes(m), ",");
+        assert_eq!(h(105), "1,75");
+        assert_eq!(h(15), "0,25");
+        assert_eq!(h(120), "2,00");
+        assert_eq!(h(0), "0,00");
+        assert_eq!(h(10), "0,17", "ikke-kvarter afrundes til to decimaler");
+        assert_eq!(format_decimal_hours(Duration::minutes(30), "."), "0.50");
+    }
 
     fn active_since(project_id: Option<Id>, minutes: i64) -> Option<ActiveTimer> {
         Some(ActiveTimer {

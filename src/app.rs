@@ -29,7 +29,7 @@ use item_history::ItemHistory;
 use shortcuts_dialog::ShortcutsDialog;
 use crate::hotkeys::GlobalHotkeys;
 use crate::shortcuts::Action;
-use crate::data::{NOTE_PHONE, BilledState, Scope, format_length, note_label, ActiveTimer, SortOrder, TemplateProject, format_duration, DayEntry, format_hours_minutes, round_down_quarter, round_up_quarter, CallTarget, Customer, Data, Id, Project, ThemeChoice, NOTE_PAUSE};
+use crate::data::{NOTE_PHONE, BilledState, Scope, format_length, note_label, ActiveTimer, SortOrder, TemplateProject, format_duration, DayEntry, format_hours_minutes, format_decimal_hours, round_down_quarter, round_up_quarter, CallTarget, Customer, Data, Id, Project, ThemeChoice, NOTE_PAUSE};
 
 /// Hvor ofte en kørende timers "sidst set" gemmes.
 const HEARTBEAT: StdDuration = StdDuration::from_secs(30);
@@ -1121,10 +1121,11 @@ impl KronoLogApp {
         let date = self.history_date;
 
         // Projektnavnet afkortes, så tid, afrundet tid og flueben kan ses i det
-        // smalle vindue (ca. 7 px pr. tegn; resten af rækken fylder ca. 210 px,
-        // og linkkolonnen ca. 26 px mere).
+        // smalle vindue (ca. 7 px pr. tegn; resten af rækken fylder ca. 250 px
+        // med timer som kommatal, og linkkolonnen ca. 26 px mere).
         let any_link = totals.iter().any(|(id, _)| self.data.link_for(*id).is_some());
-        let rest = if any_link { 236.0 } else { 210.0 };
+        let rest = if any_link { 276.0 } else { 250.0 };
+        let separator = tr!("history.decimal_separator");
         let label_chars = ((ui.available_width() - rest) / 7.0).max(12.0) as usize;
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("history").striped(true).show(ui, |ui| {
@@ -1136,6 +1137,8 @@ impl KronoLogApp {
                         ui.label(RichText::new(tr!("history.col_time")).weak().small());
                         ui.label(RichText::new(tr!("history.col_rounded")).weak().small())
                             .on_hover_text(tr!("history.col_rounded_hint"));
+                        ui.label(RichText::new(tr!("history.col_decimal")).weak().small())
+                            .on_hover_text(tr!("history.col_decimal_hint"));
                         if any_link {
                             ui.label(RichText::new(tr!("link.col")).weak().small()).on_hover_text(tr!("link.col_hint"));
                         }
@@ -1244,6 +1247,8 @@ impl KronoLogApp {
                             } else {
                                 ui.label(text).on_hover_text(hover);
                             }
+                            // Timer som kommatal til CMS; klik kopierer tallet (#42).
+                            decimal_hours_button(ui, r.time, &separator);
                             // Link til fx Salesforce, hvor tiden skal registreres (#41).
                             if let Some(link) = self.data.link_for(*project_id) {
                                 link_button(ui, link);
@@ -1360,6 +1365,7 @@ impl KronoLogApp {
                         .fold(Duration::zero(), |sum, (id, d)| sum + self.data.rounded(date, *id, *d).time);
                     ui.label(RichText::new(format_hours_minutes(rounded)).monospace().strong())
                         .on_hover_text(tr!("history.rounded_total_hint"));
+                    decimal_hours_button(ui, rounded, &separator);
                 }
                 ui.end_row();
             });
@@ -3226,6 +3232,16 @@ pub(crate) fn hover_button(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>)
         ui.painter().set(background, egui::Shape::rect_filled(rect, 3.0, ACCENT.gamma_multiply(alpha)));
     }
     response
+}
+
+/// Tiden som kommatal (1,75); klik kopierer tallet, så det kan sættes ind i CMS (#42).
+fn decimal_hours_button(ui: &mut egui::Ui, time: Duration, separator: &str) {
+    let hours = format_decimal_hours(time, separator);
+    let response = hover_button(ui, RichText::new(&hours).monospace())
+        .on_hover_text(tr!("history.decimal_copy_hint", hours = hours.as_str()));
+    if response.clicked() {
+        ui.ctx().copy_text(hours);
+    }
 }
 
 /// "Åbn link" / "Åbn mappe" øverst i en højrekliksmenu, når der er et link (#41).

@@ -3,6 +3,10 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.5 (2026-11-20)
+
+- Ny kolonne "Timer" i Summeret historik: den afrundede tid som kommatal til CMS, f.eks. 1,75 for 1:45. Klik på tallet for at kopiere det (#42)
+
 ## 1.3.4 (2026-11-19)
 
 - Lange links, f.eks. kopieret fra Edge, åbner nu også på Windows (#41)
