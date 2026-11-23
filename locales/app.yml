@@ -1364,9 +1364,12 @@ week.click_to_bill:
 week.billed_changed:
   da: "Krydset af med %{old}, men tiden er ændret. Klik for at krydse af med den nye tid."
   en: "Ticked off with %{old}, but the time has changed. Click to tick off with the new time."
+week.fold_hint:
+  da: "Klik for at se ugens registreringer og noter"
+  en: "Click to see the week's entries and notes"
 week.hint:
-  da: "Afrundet tid pr. dag, som i Summeret. Klik på en tid for at krydse den af (grøn); klik på en ugedag for at se dagen."
-  en: "Rounded time per day, as in Summary. Click a time to tick it off (green); click a weekday to see the day."
+  da: "Afrundet tid pr. dag, som i Summeret. Klik på en tid for at krydse den af (grøn); klik på et projekt for at se noterne; klik på en ugedag for at se dagen."
+  en: "Rounded time per day, as in Summary. Click a time to tick it off (green); click a project to see its notes; click a weekday to see the day."
 gap.label:
   da: "+ Ikke registreret"
   en: "+ Not recorded"

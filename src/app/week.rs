@@ -48,11 +48,18 @@ impl KronoLogApp {
         let day_names = tr!("week.days");
         let day_names: Vec<&str> = day_names.split(',').collect();
         let today = Local::now().date_naive();
+        let sunday = monday + Duration::days(6);
         let mut toggle = None;
         let mut open_day = None;
+        let mut toggle_fold = None;
+        let mut open_editor = None;
+        let mut show_entries = None;
         // Projektnavnet afkortes, så ugen kan ses i det smalle vindue.
-        // Hver tidskolonne er ca. 36 px ("0:00" i 12 px plus mellemrum); navnet er ca. 6 px pr. tegn.
-        let label_chars = ((ui.available_width() - 16.0 - (shown.len() + 1) as f32 * 36.0) / 6.0).max(8.0) as usize;
+        // Hver tidskolonne er ca. 36 px ("0:00" i 12 px plus mellemrum); navnet er ca. 6 px pr. tegn,
+        // og linkkolonnen tager ca. 26 px mere.
+        let any_link = rows.iter().any(|(id, _)| self.data.link_for(*id).is_some());
+        let rest = 16.0 + (shown.len() + 1) as f32 * 36.0 + if any_link { 26.0 } else { 0.0 };
+        let label_chars = ((ui.available_width() - rest) / 6.0).max(8.0) as usize;
         let cell = |text: String| RichText::new(text).monospace().size(12.0);
 
         egui::ScrollArea::both().show(ui, |ui| {
@@ -71,12 +78,30 @@ impl KronoLogApp {
                     }
                 }
                 ui.label(RichText::new(tr!("history.total")).weak().small());
+                if any_link {
+                    ui.label(RichText::new(tr!("link.col")).weak().small()).on_hover_text(tr!("link.col_hint"));
+                }
                 ui.end_row();
 
                 let mut day_totals = [Duration::zero(); 7];
                 for (project_id, row) in &rows {
                     let full = self.data.project_label(*project_id);
-                    ui.label(RichText::new(shorten(&full, label_chars)).size(12.0)).on_hover_text(&full);
+                    // Klik på projektet folder ugens registreringer ud, så noterne kan læses.
+                    let open = self.history_open.contains(project_id);
+                    let arrow = if open { "⏷" } else { "⏵" };
+                    let label = RichText::new(format!("{arrow} {}", shorten(&full, label_chars))).size(12.0);
+                    let mut response = ui.add(egui::Button::new(label).frame(false));
+                    if response.clicked() {
+                        toggle_fold = Some(*project_id);
+                    }
+                    response = response.on_hover_text(format!("{full}\n{}", tr!("week.fold_hint")));
+                    response.context_menu(|ui| {
+                        super::link_menu_item(ui, self.data.link_for(*project_id));
+                        if ui.button(tr!("item.show")).clicked() {
+                            show_entries = Some(Scope::Project(*project_id));
+                            ui.close();
+                        }
+                    });
                     for &d in &shown {
                         let date = monday + Duration::days(d as i64);
                         let Some(time) = row[d] else {
@@ -106,7 +131,70 @@ impl KronoLogApp {
                     }
                     let total = row.iter().flatten().fold(Duration::zero(), |s, d| s + *d);
                     ui.label(cell(format_hours_minutes(total)).strong());
+                    // Link til fx Salesforce, hvor tiden skal registreres (#41).
+                    if any_link {
+                        match self.data.link_for(*project_id) {
+                            Some(link) => super::link_button(ui, link),
+                            None => {
+                                ui.label("");
+                            }
+                        }
+                    }
                     ui.end_row();
+
+                    if open {
+                        // Ugens registreringer med klokkeslæt og note; tiden står i
+                        // sin egen ugedags kolonne, så det er til at se hvornår.
+                        for day_entry in self.data.entries_in(Scope::Project(*project_id), Some(monday), Some(sunday)) {
+                            let e = &day_entry.entry;
+                            let day = e.start.date_naive().weekday().num_days_from_monday() as usize;
+                            let mut times = format!("{}–{}", e.start.format("%H:%M"), e.end.format("%H:%M"));
+                            match e.note.as_deref() {
+                                Some(NOTE_PAUSE) => times.push_str(" ☕"),
+                                Some(NOTE_PHONE) => times.push_str(" 📞"),
+                                _ => {}
+                            }
+                            ui.horizontal(|ui| {
+                                ui.add_space(12.0);
+                                ui.vertical(|ui| {
+                                    let text = RichText::new(times).monospace().size(11.0).weak();
+                                    // Dagskolonnen viser t:mm; den nøjagtige længde står i hjælpeteksten.
+                                    let length = format_duration(e.duration());
+                                    match day_entry.index {
+                                        Some(index) => {
+                                            let response = ui
+                                                .add(egui::Button::new(text).frame(false))
+                                                .on_hover_text(format!("{length}\n{}", tr!("history.click_to_edit")));
+                                            if response.clicked() {
+                                                open_editor = Some(EntryEditor::edit(index, e));
+                                            }
+                                        }
+                                        // Den kørende timer kan ikke rettes, før den er stoppet.
+                                        None => {
+                                            ui.label(text.color(ACCENT))
+                                                .on_hover_text(format!("{length}\n{}", tr!("history.running")));
+                                        }
+                                    }
+                                    if !e.description.is_empty() {
+                                        ui.label(RichText::new(format!("📝 {}", shorten(&e.description, label_chars))).weak().small())
+                                            .on_hover_text(&e.description);
+                                    }
+                                });
+                            });
+                            for &d in &shown {
+                                if d == day {
+                                    ui.label(cell(format_hours_minutes(e.duration())).weak());
+                                } else {
+                                    ui.label("");
+                                }
+                            }
+                            ui.label("");
+                            if any_link {
+                                ui.label("");
+                            }
+                            ui.end_row();
+                        }
+                    }
                 }
 
                 ui.label(RichText::new(tr!("history.total")).weak().small());
@@ -128,6 +216,17 @@ impl KronoLogApp {
         if let Some(date) = open_day {
             self.history_date = date;
             self.history_view = HistoryView::Summary;
+        }
+        if let Some(project_id) = toggle_fold
+            && !self.history_open.remove(&project_id)
+        {
+            self.history_open.insert(project_id);
+        }
+        if open_editor.is_some() {
+            self.editor = open_editor;
+        }
+        if let Some(scope) = show_entries {
+            self.open_item_history(scope);
         }
     }
 }

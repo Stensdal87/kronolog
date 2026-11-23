@@ -3,6 +3,12 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.6 (2026-11-23)
+
+- Ugeskemaet har nu kolonnen Link med 🔗/📁, som i Summeret
+- Klik på et projekt i ugeskemaet for at folde ugens registreringer ud med klokkeslæt og noter; klik på en registrering for at rette den
+- Højreklik på et projekt i ugeskemaet åbner linket eller viser projektets registreringer
+
 ## 1.3.5 (2026-11-20)
 
 - Ny kolonne "Timer" i Summeret historik: den afrundede tid som kommatal til CMS, f.eks. 1,75 for 1:45. Klik på tallet for at kopiere det (#42)
