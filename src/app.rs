@@ -7,6 +7,7 @@ mod compact;
 mod forgot;
 mod help;
 mod item_history;
+mod scale_guard;
 mod shortcuts_dialog;
 mod week;
 
@@ -137,6 +138,8 @@ pub struct KronoLogApp {
     layout_applied: bool,
     picker: Option<ProjectPicker>,
     pending_move: Option<PendingMove>,
+    /// Holder størrelsen, når vinduet trækkes mellem skærme med forskellig skalering (#43).
+    scale_guard: scale_guard::ScaleGuard,
     /// Hvor meget en flytning skal justeres, fordi vinduesmanageren lægger
     /// titellinjen oveni (KWin/X11: ca. 28 px). Læres ved opstart og ved første
     /// rettede flytning, så senere flytninger lander rigtigt med det samme.
@@ -292,6 +295,7 @@ impl KronoLogApp {
             layout_applied: false,
             picker: None,
             pending_move: None,
+            scale_guard: Default::default(),
             move_correction: [Vec2::ZERO; 2],
             bar_anchor_bottom: None,
             bar_anchor_right: None,
@@ -1541,6 +1545,7 @@ impl eframe::App for KronoLogApp {
             self.apply_layout(&ctx, frame, layout);
         }
         self.handle_pending_move(&ctx);
+        self.keep_size_across_scales(&ctx, frame);
         self.update_bar_side(&ctx, frame);
         match layout {
             // Lige efter start kan vinduet stadig have bjælkens størrelse (f.eks.

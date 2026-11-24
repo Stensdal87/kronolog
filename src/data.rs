@@ -416,8 +416,13 @@ pub struct Rounded {
 impl Data {
     /// Standardplacering: ~/.local/share/kronolog/data.json på Linux,
     /// %APPDATA%\KronoLog\data\data.json på Windows.
+    /// Til udvikling kan `KRONOLOG_DATA_DIR` pege på en anden mappe, så en
+    /// testkopi hverken rører de rigtige data eller møder den kørende kopi.
     pub fn default_path() -> PathBuf {
-        Self::path_for("KronoLog")
+        match std::env::var_os("KRONOLOG_DATA_DIR") {
+            Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("data.json"),
+            _ => Self::path_for("KronoLog"),
+        }
     }
 
     /// Datafilens placering for et givet programnavn.

@@ -3,6 +3,10 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.7 (2026-11-24)
+
+- Vinduet kan nu trækkes mellem skærme med forskellig skalering (f.eks. 100 % og 125 %) uden at stritte imod og vokse for hvert forsøg
+
 ## 1.3.6 (2026-11-23)
 
 - Ugeskemaet har nu kolonnen Link med 🔗/📁, som i Summeret

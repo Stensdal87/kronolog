@@ -139,6 +139,7 @@ impl KronoLogApp {
         // Titellinjen skiftes først, så størrelsen bagefter gælder indholdet uden
         // (ellers blev bjælken titellinjens højde for høj på Windows).
         ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(decorated));
+        self.scale_guard.reset();
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(min_size));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
 
@@ -204,6 +205,25 @@ impl KronoLogApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(request));
         self.pending_move = Some(PendingMove { target, decorated, request, at: Instant::now(), tries: 0 });
         ctx.request_repaint_after(StdDuration::from_millis(150));
+    }
+
+    /// Giver vinduet sin størrelse igen, hvis den voksede, da det blev trukket
+    /// mellem skærme med forskellig skalering (#43, se `scale_guard`).
+    pub(super) fn keep_size_across_scales(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        super::scale_guard::use_suggested_rect_on_scale_change(frame);
+        let (ppp, inner, minimized) =
+            ctx.input(|i| (i.viewport().native_pixels_per_point, i.viewport().inner_rect, i.viewport().minimized));
+        let (Some(ppp), Some(inner)) = (ppp, inner) else { return };
+        if minimized == Some(true) {
+            return;
+        }
+        let now = Instant::now();
+        if let Some(size) = self.scale_guard.observe(now, ppp, inner) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+        }
+        if self.scale_guard.busy(now) {
+            ctx.request_repaint_after(StdDuration::from_millis(100));
+        }
     }
 
     /// Retter en flytning til, hvis vinduet ikke landede, hvor det skulle.

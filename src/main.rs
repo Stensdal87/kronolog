@@ -59,6 +59,11 @@ fn main() -> eframe::Result {
             .with_maximize_button(false)
             .with_icon(tray::app_icon())
             .with_always_on_top(),
+        // Vinduesindstillingerne (app.ron) ved siden af data.json, så en testkopi
+        // med `KRONOLOG_DATA_DIR` også har sine egne.
+        persistence_path: std::env::var_os("KRONOLOG_DATA_DIR")
+            .filter(|dir| !dir.is_empty())
+            .and_then(|_| path.parent().map(|dir| dir.join("app.ron"))),
         ..Default::default()
     };
     // Wayland lader ikke programmer lægge sig øverst, så på Linux kører vi via
@@ -91,7 +96,8 @@ fn main() -> eframe::Result {
 /// filer bliver liggende som en ekstra sikkerhedskopi.
 fn migrate_from_old_name() {
     let new_data = data::Data::default_path();
-    if new_data.exists() {
+    // En testkopi (`KRONOLOG_DATA_DIR`) skal ikke have de rigtige data.
+    if new_data.exists() || std::env::var_os("KRONOLOG_DATA_DIR").is_some_and(|d| !d.is_empty()) {
         return;
     }
     for (data_name, window_name) in OLD_NAMES {

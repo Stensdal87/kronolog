@@ -3,6 +3,10 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.7 (2026-11-24)
+
+- The window can now be dragged between monitors with different scaling (e.g. 100% and 125%) without resisting and growing with every attempt
+
 ## 1.3.6 (2026-11-23)
 
 - The week grid now has a Link column with 🔗/📁, as in the Summary
