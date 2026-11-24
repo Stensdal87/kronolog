@@ -1118,7 +1118,20 @@ impl Data {
         })
     }
 
-    /// Gemmer opkaldet som registrering, hvis dets mål er udfyldt.
+    /// Skabelonens projekter, hvis den skrevne kunde er ny (findes ikke i
+    /// forvejen), så man kan vælge et af dem til opkaldet. Ellers tom.
+    pub fn template_projects_for(&self, customer: &str) -> Vec<String> {
+        if customer.trim().is_empty() || self.visible_customers().any(|c| same_name(&c.name, customer)) {
+            return Vec::new();
+        }
+        self.settings
+            .customer_template
+            .iter()
+            .map(|p| p.name.trim().to_owned())
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+
     /// Projektet, et opkald med kontakten sidst blev registreret på, hvis det
     /// stadig findes.
     pub fn remembered_project(&self, caller: &str) -> Option<Id> {
@@ -2049,6 +2062,13 @@ mod tests {
         let target = CallTarget { customer: "Anden kunde".into(), project: "hotline".into(), ..Default::default() };
         let id = data.resolve_target(&target).unwrap();
         assert_eq!(data.project_label(id), "Anden kunde / Hotline");
+
+        // Opkaldsdialogen tilbyder skabelonens projekter, kun for en ny kunde.
+        assert_eq!(data.template_projects_for("Tredje kunde"), ["Hotline", "Projekt"]);
+        assert!(data.template_projects_for("anden KUNDE").is_empty(), "findes allerede");
+        assert!(data.template_projects_for("  ").is_empty());
+        data.settings.customer_template.clear();
+        assert!(data.template_projects_for("Tredje kunde").is_empty());
     }
 
     #[test]

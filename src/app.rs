@@ -1819,7 +1819,7 @@ impl KronoLogApp {
 
             ui.separator();
             ui.label(RichText::new(tr!("call.or_type")).weak());
-            typed_target_fields(ui, &mut target);
+            typed_target_fields(ui, &mut target, &self.data);
             ui.add_space(4.0);
             let count = selected.len();
             if count <= 1 {
@@ -2026,7 +2026,7 @@ impl KronoLogApp {
                     }
                 }
             });
-        typed_target_fields(ui, &mut target);
+        typed_target_fields(ui, &mut target, &self.data);
 
         if let Some(active) = &mut self.data.active
             && active.target != target
@@ -3277,7 +3277,10 @@ fn settings_section(ui: &mut egui::Ui, title: String) {
     ui.label(RichText::new(title).strong());
 }
 
-fn typed_target_fields(ui: &mut egui::Ui, target: &mut CallTarget) {
+/// Felterne Kunde og Projekt til et opkald. Er kunden ny, og har skabelonen
+/// for nye kunder projekter, kan man vælge et af dem med et klik; kunden
+/// oprettes så med skabelonens projekter, og opkaldet registreres på det valgte.
+fn typed_target_fields(ui: &mut egui::Ui, target: &mut CallTarget, data: &Data) {
     let mut changed = false;
     ui.horizontal(|ui| {
         let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0 - 4.0;
@@ -3288,6 +3291,19 @@ fn typed_target_fields(ui: &mut egui::Ui, target: &mut CallTarget) {
             .add(egui::TextEdit::singleline(&mut target.project).hint_text(tr!("common.project")).desired_width(width))
             .changed();
     });
+    let template = data.template_projects_for(&target.customer);
+    if !template.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(tr!("call.template_projects")).weak().small());
+            for name in template {
+                let chosen = target.project.trim().to_lowercase() == name.to_lowercase();
+                if ui.selectable_label(chosen, &name).clicked() {
+                    target.project = name;
+                    changed = true;
+                }
+            }
+        });
+    }
     if changed {
         target.project_id = None;
     }

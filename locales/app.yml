@@ -758,6 +758,9 @@ call.where:
 call.or_type:
   da: "Eller skriv kunde og projekt (oprettes hvis de ikke findes):"
   en: "Or type a customer and project (created if they don't exist):"
+call.template_projects:
+  da: "Fra skabelonen:"
+  en: "From the template:"
 call.register:
   da: "✔ Registrér"
   en: "✔ Save"
