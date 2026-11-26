@@ -664,9 +664,14 @@ fn project_combo(ui: &mut egui::Ui, data: &Data, id_salt: &str, project_id: &mut
     });
 }
 
+/// Farven på tiden før en deling (bliver, hvor den kom fra) og efter (flyttes
+/// til det nye projekt), så man kan se, hvor hver del ender.
+pub const SPLIT_BEFORE: Color32 = Color32::from_rgb(70, 160, 90);
+pub const SPLIT_AFTER: Color32 = Color32::from_rgb(70, 160, 230);
+
 /// En skyder over tidsrummet `start`–`end`, der hopper i hele 5 minutter, til
-/// at vælge hvor der deles. Viser klokkeslættet og minutterne på hver side.
-/// Giver `true`, når den er flyttet.
+/// at vælge hvor der deles. Viser klokkeslættet og minutterne på hver side,
+/// i farverne for før og efter. Giver `true`, når den er flyttet.
 pub fn split_slider(ui: &mut egui::Ui, start: DateTime<Local>, end: DateTime<Local>, at: &mut DateTime<Local>) -> bool {
     let total = (end - start).num_minutes().max(1);
     let mut minutes = (*at - start).num_minutes().clamp(0, total);
@@ -679,10 +684,10 @@ pub fn split_slider(ui: &mut egui::Ui, start: DateTime<Local>, end: DateTime<Loc
     let font = egui::TextStyle::Body.resolve(ui.style());
     let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), font.size + 4.0), egui::Sense::hover());
     let painter = ui.painter();
-    let (weak, strong) = (ui.visuals().weak_text_color(), ui.visuals().strong_text_color());
-    painter.text(row.left_center(), egui::Align2::LEFT_CENTER, format_minutes(minutes), font.clone(), weak);
+    let strong = ui.visuals().strong_text_color();
+    painter.text(row.left_center(), egui::Align2::LEFT_CENTER, format_minutes(minutes), font.clone(), SPLIT_BEFORE);
     painter.text(row.center(), egui::Align2::CENTER_CENTER, shown.format("%H:%M").to_string(), font.clone(), strong);
-    painter.text(row.right_center(), egui::Align2::RIGHT_CENTER, format_minutes(total - minutes), font, weak);
+    painter.text(row.right_center(), egui::Align2::RIGHT_CENTER, format_minutes(total - minutes), font, SPLIT_AFTER);
     if response.changed() && minutes != before {
         *at = shown;
         true

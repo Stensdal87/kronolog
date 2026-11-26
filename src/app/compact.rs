@@ -434,12 +434,42 @@ impl KronoLogApp {
                 picker.from = Some(at);
             }
             let whole = at <= start + Duration::seconds(59);
-            let hint = if whole {
-                tr!("picker.move_all")
-            } else {
-                tr!("picker.move_from", time = at.format("%H:%M"), minutes = (Local::now() - at).num_minutes())
+            // Hvor tiden før delingen ender: der, den kom fra. Et opkald har intet
+            // projekt, men måske et mål; ellers venter den del i opkaldsvinduet.
+            let call = active.is_call();
+            let from = match active.project_id {
+                Some(id) => self.data.project_label(id),
+                None => self.target_label(&active.target).unwrap_or_else(|| tr!("picker.split_call_window")),
             };
-            ui.label(RichText::new(hint).weak().small());
+            if !whole {
+                // Navnene under hver side af skyderen, i hver sin farve.
+                ui.columns(2, |cols| {
+                    cols[0].add(
+                        egui::Label::new(
+                            RichText::new(format!("◀ {from}")).color(crate::entry_editor::SPLIT_BEFORE).strong(),
+                        )
+                        .truncate(),
+                    );
+                    cols[1].with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(format!("{} ▶", tr!("picker.split_new")))
+                                    .color(crate::entry_editor::SPLIT_AFTER)
+                                    .strong(),
+                            )
+                            .truncate(),
+                        );
+                    });
+                });
+            }
+            let time = at.format("%H:%M").to_string();
+            let hint = match (whole, call) {
+                (true, false) => tr!("picker.move_all"),
+                (true, true) => tr!("picker.move_all_call"),
+                (false, false) => tr!("picker.move_from", time = time, from = from),
+                (false, true) => tr!("picker.move_from_call", time = time, from = from),
+            };
+            ui.add(egui::Label::new(RichText::new(hint).weak().small()).wrap());
             ui.separator();
         }
         let response = ui.add(

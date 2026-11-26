@@ -758,10 +758,16 @@ impl Data {
 
     /// Flytter den kørende tidstagning til et andet projekt uden at nulstille
     /// uret (issue #10). Et opkald bliver dermed registreret på projektet.
+    /// Et opkald forbliver et opkald og får blot projektet som mål, så
+    /// telefonknappen stadig er aktiv, og det registreres dér, når det slutter.
     pub fn move_active(&mut self, project_id: Id) {
         if let Some(active) = &mut self.active {
-            active.project_id = Some(project_id);
-            active.target = CallTarget::default();
+            if active.is_call() {
+                active.target = CallTarget { project_id: Some(project_id), ..Default::default() };
+            } else {
+                active.project_id = Some(project_id);
+                active.target = CallTarget::default();
+            }
         }
     }
 
@@ -787,16 +793,32 @@ impl Data {
     /// glemte at skifte. Tiden før `at` gemmes på det hidtidige projekt (med dets
     /// type og note), og tiden kører videre på `project_id` fra `at`. Er `at`
     /// ved starten (eller før), flyttes det hele som `move_active`.
+    ///
+    /// Et opkald deles som opkald: første del registreres på opkaldets mål (eller
+    /// venter i opkaldsvinduet, hvis det ikke er valgt), og resten kører videre
+    /// som opkald med `project_id` som mål. Det, der kørte før opkaldet, huskes,
+    /// så man stadig vender tilbage dertil, når opkaldet afsluttes.
     pub fn split_active(&mut self, at: DateTime<Local>, project_id: Id) {
         let Some(active) = &self.active else { return };
         let now = Local::now();
-        if at <= active.start + Duration::seconds(1) || active.project_id.is_none() {
+        if at <= active.start + Duration::seconds(1) {
             self.move_active(project_id);
             return;
         }
         let at = at.min(now);
+        let rest = if active.is_call() {
+            ActiveTimer {
+                project_id: None,
+                note: active.note.clone(),
+                target: CallTarget { project_id: Some(project_id), ..Default::default() },
+                previous: active.previous.clone(),
+                ..Default::default()
+            }
+        } else {
+            ActiveTimer { project_id: Some(project_id), ..Default::default() }
+        };
         self.stop_at(at);
-        self.active = Some(ActiveTimer { project_id: Some(project_id), start: at, last_seen: now, ..Default::default() });
+        self.active = Some(ActiveTimer { start: at, last_seen: now, ..rest });
     }
 
     /// Stopper tiden pr. `at`, f.eks. da computeren gik i dvale (issue #6).
@@ -2354,6 +2376,68 @@ mod tests {
         data.split_active(active_start, a);
         assert_eq!(data.entries.len(), 1);
         assert_eq!(data.active.as_ref().unwrap().project_id, Some(a));
+    }
+
+    #[test]
+    fn split_call_keeps_the_call_and_registers_the_first_part_on_its_target() {
+        let mut data = Data::default();
+        data.settings.customer_template = vec![TemplateProject { name: "Hotline".into(), auto_start: true }];
+        let internal = data.internal_project_id();
+        let c = data.add_customer("Kunde");
+        let before = data.add_project(c, "Før opkaldet");
+        data.start(before);
+        data.toggle_call();
+        let start = Local::now() - Duration::minutes(45);
+        let active = data.active.as_mut().unwrap();
+        active.start = start;
+        active.description = "Møde om ændringer".into();
+        active.caller = "Møde om ændringer".into();
+        active.target = CallTarget { customer: "Ny kunde".into(), project: "Hotline".into(), ..Default::default() };
+
+        // Den første halve time på kunden, resten af opkaldet på Intern.
+        let at = start + Duration::minutes(30);
+        data.split_active(at, internal);
+        // (Projektet før opkaldet kørte under ét sekund og gemmes ikke.)
+        assert_eq!(data.entries.len(), 1, "første del af opkaldet");
+        let first = data.entries.last().unwrap();
+        assert_eq!(data.project_label(first.project_id), "Ny kunde / Hotline");
+        assert_eq!((first.start, first.end), (start, at));
+        assert_eq!(first.note.as_deref(), Some(NOTE_PHONE));
+        assert_eq!(first.description, "Møde om ændringer", "noten bliver på første del");
+        assert!(data.unassigned.is_empty());
+
+        let active = data.active.as_ref().unwrap();
+        assert!(active.is_call(), "telefonen er stadig i gang");
+        assert_eq!((active.start, active.target.project_id), (at, Some(internal)));
+        assert!(active.description.is_empty(), "anden del starter uden den gamle note");
+        assert_eq!(data.resume_project(), Some(before), "vender stadig tilbage efter opkaldet");
+
+        // Opkaldet afsluttes: resten registreres på Intern, og projektet fortsætter.
+        data.toggle_call();
+        let last = data.entries.last().unwrap();
+        assert_eq!((last.project_id, last.start), (internal, at));
+        assert_eq!(data.active.as_ref().unwrap().project_id, Some(before));
+    }
+
+    #[test]
+    fn split_call_without_target_waits_in_the_call_window() {
+        let mut data = Data::default();
+        let c = data.add_customer("Kunde");
+        let p = data.add_project(c, "A");
+        data.start_call();
+        let start = Local::now() - Duration::minutes(20);
+        data.active.as_mut().unwrap().start = start;
+        data.split_active(start + Duration::minutes(10), p);
+        assert_eq!(data.unassigned.len(), 1, "første del venter på et projekt");
+        assert!(data.active.as_ref().unwrap().is_call());
+
+        // Hele opkaldet flyttet: stadig et opkald, nu med projektet som mål.
+        let active_start = data.active.as_ref().unwrap().start;
+        let other = data.add_project(c, "B");
+        data.split_active(active_start, other);
+        let active = data.active.as_ref().unwrap();
+        assert!(active.is_call());
+        assert_eq!(active.target.project_id, Some(other));
     }
 
     #[test]

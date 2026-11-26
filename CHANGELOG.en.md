@@ -3,6 +3,12 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.9 (2026-11-26)
+
+- Splitting a call with ⇄ now registers the first part on the call's customer/project, and the rest continues as a call on the chosen project. Before, the whole call was moved and the phone was switched off
+- When splitting time (⇄ or ✂ Split), colors and names under the slider show where each part goes: green stays where the time came from, blue moves to the new project
+- The call log now records the Teams windows during the whole call, to find out how going straight from a call into a meeting can be detected
+
 ## 1.3.8 (2026-11-24)
 
 - When you type a new customer in the call window, you can pick one of the projects from the template for new customers (e.g. Hotline) with one click

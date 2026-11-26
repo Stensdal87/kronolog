@@ -3,6 +3,12 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.9 (2026-11-26)
+
+- Deler man et opkald med ⇄, registreres første del nu på opkaldets kunde/projekt, og resten fortsætter som opkald på det valgte projekt. Før blev hele opkaldet flyttet, og telefonen blev slået fra
+- Når tiden deles (⇄ eller ✂ Del op), viser farver og navne under skyderen, hvor hver del ender: grøn bliver, hvor tiden kom fra, blå flyttes til det nye projekt
+- Opkaldsloggen skriver nu Teams' vinduer under hele opkaldet, så det kan findes ud af, hvordan et skift direkte fra et opkald til et møde kan opdages
+
 ## 1.3.8 (2026-11-24)
 
 - Skriver man en ny kunde i opkaldsvinduet, kan man vælge et af projekterne fra skabelonen for nye kunder (f.eks. Hotline) med et klik

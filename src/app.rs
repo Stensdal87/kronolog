@@ -2238,11 +2238,12 @@ impl KronoLogApp {
             self.logged_mic_apps = Some(apps);
         }
         // Opkaldsprogrammets vinduer, så man kan se, hvad titlerne siger om,
-        // hvem man taler med.
+        // hvem man taler med. Logges under hele opkaldet (ikke kun, indtil
+        // navnet er fundet), så man kan se, hvad Teams viser, når man går fra
+        // et opkald direkte over i et møde, som ikke blev opdaget som nyt opkald.
         let windows = self.mic.windows().to_vec();
         if windows != self.logged_call_windows {
-            // Når navnet er fundet, er resten af opkaldets vinduer uden interesse.
-            if !windows.is_empty() && !self.call_named {
+            if !windows.is_empty() {
                 let titles: Vec<String> = windows
                     .iter()
                     .map(|w| format!("\"{}\"{}", w.title, if w.new { " (nyt)" } else { "" }))

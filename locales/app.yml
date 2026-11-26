@@ -1167,11 +1167,23 @@ split.err_project:
   da: "Vælg projekt til anden del"
   en: "Choose a project for the second part"
 picker.move_all:
-  da: "Hele den kørende tid flyttes. Træk i skyderen for kun at flytte den sidste del."
-  en: "All of the running time is moved. Drag the slider to move only the last part."
+  da: "Hele den kørende tid flyttes til det projekt, du vælger nedenfor. Træk i skyderen for kun at flytte den sidste del."
+  en: "All of the running time is moved to the project you pick below. Drag the slider to move only the last part."
+picker.move_all_call:
+  da: "Hele opkaldet registreres på det projekt, du vælger nedenfor, og telefonen kører videre. Træk i skyderen for kun at flytte den sidste del."
+  en: "The whole call is registered on the project you pick below, and the call keeps running. Drag the slider to move only the last part."
 picker.move_from:
-  da: "Tiden fra %{time} (de sidste %{minutes} min) flyttes; tiden før bliver på det nuværende projekt."
-  en: "Time from %{time} (the last %{minutes} min) is moved; the time before stays on the current project."
+  da: "Før %{time} bliver på %{from}. Fra %{time} flyttes tiden til det projekt, du vælger nedenfor."
+  en: "Before %{time} stays on %{from}. From %{time} the time moves to the project you pick below."
+picker.move_from_call:
+  da: "Før %{time} registreres på %{from}. Fra %{time} fortsætter opkaldet på det projekt, du vælger nedenfor."
+  en: "Before %{time} is registered on %{from}. From %{time} the call continues on the project you pick below."
+picker.split_new:
+  da: "Projektet nedenfor"
+  en: "The project below"
+picker.split_call_window:
+  da: "opkaldsvinduet (vælg bagefter)"
+  en: "the call window (pick later)"
 help.window_title:
   da: "Hjælp – KronoLog"
   en: "Help – KronoLog"
