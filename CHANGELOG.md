@@ -3,6 +3,12 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.10 (2026-11-26)
+
+- Genkender KronoLog personen fra et tidligere Teams-opkald, udfyldes projektet fra sidst nu med det samme under "Registrér opkaldet på", og opkaldet registreres dér, når det slutter. Man kan ændre det undervejs
+- Møder uden navn ("Microsoft Teams-møde") huskes ikke længere som en kontakt, så de ikke alle foreslås på samme projekt
+- Vælger man typen Pause, når man tilføjer eller retter en registrering, vælges Intern tid som projekt af sig selv
+
 ## 1.3.9 (2026-11-26)
 
 - Deler man et opkald med ⇄, registreres første del nu på opkaldets kunde/projekt, og resten fortsætter som opkald på det valgte projekt. Før blev hele opkaldet flyttet, og telefonen blev slået fra

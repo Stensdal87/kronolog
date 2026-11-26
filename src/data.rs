@@ -852,6 +852,11 @@ impl Data {
         self.projects.iter().filter(|p| !p.deleted)
     }
 
+    /// Intern tid, hvis det findes (uden at oprette det som `internal_project_id`).
+    pub fn existing_internal_project(&self) -> Option<Id> {
+        self.internal_project.filter(|id| self.project(*id).is_some_and(|p| !p.deleted))
+    }
+
     pub fn is_internal(&self, project_id: Id) -> bool {
         self.internal_project == Some(project_id)
     }
@@ -1157,8 +1162,8 @@ impl Data {
     /// Projektet, et opkald med kontakten sidst blev registreret på, hvis det
     /// stadig findes.
     pub fn remembered_project(&self, caller: &str) -> Option<Id> {
-        let key = caller.trim().to_lowercase();
-        let id = *self.call_contacts.get(&key).filter(|_| !key.is_empty())?;
+        let key = contact_key(caller)?;
+        let id = *self.call_contacts.get(&key)?;
         self.project(id).is_some_and(|p| !p.deleted).then_some(id)
     }
 
@@ -1166,9 +1171,8 @@ impl Data {
         let Some(project_id) = self.resolve_target(&call.target) else {
             return false;
         };
-        let caller = call.caller.trim().to_lowercase();
-        if !caller.is_empty() {
-            self.call_contacts.insert(caller, project_id);
+        if let Some(key) = contact_key(&call.caller) {
+            self.call_contacts.insert(key, project_id);
         }
         self.entries.push(TimeEntry {
             project_id,
@@ -1462,6 +1466,15 @@ fn sort_key(name: &str) -> String {
 }
 
 /// Navne sammenlignes uden hensyn til store/små bogstaver (også æ, ø, å).
+/// Nøglen, en kontakt huskes under (små bogstaver). `None` for tomme navne og
+/// Teams' standardtitel for møder uden navn: den siger intet om, hvem man
+/// talte med, og ellers blev alle navnløse møder foreslået på samme projekt.
+fn contact_key(caller: &str) -> Option<String> {
+    const GENERIC: [&str; 4] = ["microsoft teams-møde", "microsoft teams meeting", "teams-møde", "teams meeting"];
+    let key = caller.trim().to_lowercase();
+    (!key.is_empty() && !GENERIC.contains(&key.as_str())).then_some(key)
+}
+
 fn same_name(a: &str, b: &str) -> bool {
     a.trim().to_lowercase() == b.trim().to_lowercase()
 }
@@ -1692,6 +1705,16 @@ mod tests {
         data.delete_project(p);
         call_with(&mut data, "Anna Jensen - Firma A/S");
         assert!(data.unassigned[0].target.is_empty(), "et slettet projekt foreslås ikke");
+
+        // Teams' titel for møder uden navn er ingen kontakt.
+        data.discard_unassigned(&[0]);
+        let q = data.add_project(c, "Hotline");
+        call_with(&mut data, "Microsoft Teams-møde");
+        assert_eq!(data.register_unassigned(&[0], &CallTarget { project_id: Some(q), ..Default::default() }), 1);
+        assert_eq!(data.remembered_project("Microsoft Teams-møde"), None);
+        assert!(!data.call_contacts.contains_key("microsoft teams-møde"));
+        call_with(&mut data, "microsoft teams-møde");
+        assert!(data.unassigned[0].target.is_empty(), "intet forslag for et navnløst møde");
     }
 
     #[test]

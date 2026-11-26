@@ -3,6 +3,12 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.10 (2026-11-26)
+
+- When KronoLog recognizes the person from an earlier Teams call, the project from last time is now filled in right away under "Record the call on", and the call is registered there when it ends. You can change it during the call
+- Meetings without a name ("Microsoft Teams meeting") are no longer remembered as a contact, so they are not all suggested on the same project
+- Choosing the type Break when adding or editing an entry now picks Internal time as the project automatically
+
 ## 1.3.9 (2026-11-26)
 
 - Splitting a call with ⇄ now registers the first part on the call's customer/project, and the rest continues as a call on the chosen project. Before, the whole call was moved and the phone was switched off

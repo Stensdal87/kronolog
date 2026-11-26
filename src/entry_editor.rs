@@ -430,7 +430,13 @@ impl EntryEditor {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.note, None, tr!("editor.type_normal"));
                     ui.selectable_value(&mut self.note, Some(NOTE_PHONE.to_owned()), tr!("editor.type_phone"));
-                    ui.selectable_value(&mut self.note, Some(NOTE_PAUSE.to_owned()), tr!("editor.type_pause"));
+                    let pause = ui.selectable_value(&mut self.note, Some(NOTE_PAUSE.to_owned()), tr!("editor.type_pause"));
+                    // Pause registreres altid på Intern tid, ligesom ☕ Pause gør.
+                    if pause.clicked()
+                        && let Some(internal) = data.existing_internal_project()
+                    {
+                        self.project_id = Some(internal);
+                    }
                 });
                 ui.end_row();
 

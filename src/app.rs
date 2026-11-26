@@ -2305,6 +2305,7 @@ impl KronoLogApp {
             && let Some(name) = crate::mic::caller_name(&windows)
         {
             self.call_named = true;
+            let remembered = self.data.remembered_project(&name);
             if let Some(active) = self.data.active.as_mut().filter(|a| a.is_call()) {
                 active.caller = name.clone();
                 if active.description.trim().is_empty() {
@@ -2313,8 +2314,17 @@ impl KronoLogApp {
                 } else {
                     self.mic_log.write(&format!("Navn fra opkaldsvinduet: \"{name}\" (noten var udfyldt, røres ikke)"));
                 }
-                if let Some(project) = self.data.remembered_project(&name).and_then(|id| self.data.project(id)) {
-                    self.mic_log.write(&format!("Projektet fra sidst foreslås: {}", project.name));
+                // Talte man med personen sidst, udfyldes projektet fra dengang, så
+                // opkaldet registreres dér, når det slutter. Man kan ændre det
+                // undervejs; har man allerede valgt noget, røres det ikke.
+                if let Some(id) = remembered {
+                    let label = self.data.project_label(id);
+                    if let Some(active) = self.data.active.as_mut().filter(|a| a.target.is_empty()) {
+                        active.target.project_id = Some(id);
+                        self.mic_log.write(&format!("Projektet fra sidst udfyldt: {label}"));
+                    } else {
+                        self.mic_log.write(&format!("Projektet fra sidst: {label} (et projekt var valgt, røres ikke)"));
+                    }
                 }
                 self.save();
             }
