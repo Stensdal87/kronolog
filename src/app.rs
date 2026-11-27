@@ -1547,6 +1547,7 @@ impl eframe::App for KronoLogApp {
         self.handle_pending_move(&ctx);
         self.keep_size_across_scales(&ctx, frame);
         self.update_bar_side(&ctx, frame);
+        copied_notice(&ctx);
         match layout {
             // Lige efter start kan vinduet stadig have bjælkens størrelse (f.eks.
             // hvis programmet blev slået ned med bjælken fremme), indtil
@@ -3256,8 +3257,39 @@ fn decimal_hours_button(ui: &mut egui::Ui, time: Duration, separator: &str) {
     let response = hover_button(ui, RichText::new(&hours).monospace())
         .on_hover_text(tr!("history.decimal_copy_hint", hours = hours.as_str()));
     if response.clicked() {
-        ui.ctx().copy_text(hours);
+        copy_with_notice(ui.ctx(), hours);
     }
+}
+
+/// Hvor længe "Kopieret" står ved musen.
+const COPIED_NOTICE: StdDuration = StdDuration::from_millis(1500);
+
+/// Kopierer teksten og viser kort "📋 Kopieret …" ved musen (`copied_notice`).
+pub(crate) fn copy_with_notice(ctx: &egui::Context, text: String) {
+    let at = ctx.pointer_latest_pos().unwrap_or_default();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("copied_notice"), (text.clone(), at, Instant::now())));
+    ctx.copy_text(text);
+}
+
+/// Den diskrete besked fra `copy_with_notice`: en lille boks lige over musen,
+/// der forsvinder af sig selv. Tegnes én gang pr. billede fra `ui`.
+fn copied_notice(ctx: &egui::Context) {
+    let id = egui::Id::unique("copied_notice");
+    let Some((text, at, when)) = ctx.data(|d| d.get_temp::<(String, Pos2, Instant)>(id)) else { return };
+    if when.elapsed() >= COPIED_NOTICE {
+        ctx.data_mut(|d| d.remove::<(String, Pos2, Instant)>(id));
+        return;
+    }
+    egui::Area::new(id)
+        .order(egui::Order::Tooltip)
+        .fixed_pos(at + Vec2::new(12.0, -30.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.label(RichText::new(tr!("common.copied", text = text)).small());
+            });
+        });
+    ctx.request_repaint_after(COPIED_NOTICE.saturating_sub(when.elapsed()));
 }
 
 /// "Åbn link" / "Åbn mappe" øverst i en højrekliksmenu, når der er et link (#41).
@@ -3459,6 +3491,25 @@ mod tests {
             let (again, _) = hover_frame(&ctx, Some(rect.center()));
             assert_eq!(again, rect, "størrelsen ændres ikke");
         }
+    }
+
+    #[test]
+    fn copy_shows_a_short_notice_and_copies_the_text() {
+        let ctx = egui::Context::default();
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| copy_with_notice(ui.ctx(), "1,75".to_owned()));
+        let copied = output.platform_output.commands.iter().any(|c| *c == egui::OutputCommand::CopyText("1,75".into()));
+        output.drop_without_applying_deltas();
+        assert!(copied, "tallet er kopieret");
+
+        let id = egui::Id::unique("copied_notice");
+        ctx.run_ui(egui::RawInput::default(), |ui| copied_notice(ui.ctx())).drop_without_applying_deltas();
+        assert!(ctx.memory(|m| m.area_rect(id)).is_some(), "beskeden vises");
+
+        // Efter udløb forsvinder den.
+        let old = Instant::now() - COPIED_NOTICE - StdDuration::from_millis(10);
+        ctx.data_mut(|d| d.insert_temp(id, ("1,75".to_owned(), Pos2::ZERO, old)));
+        ctx.run_ui(egui::RawInput::default(), |ui| copied_notice(ui.ctx())).drop_without_applying_deltas();
+        assert!(ctx.data(|d| d.get_temp::<(String, Pos2, Instant)>(id)).is_none(), "beskeden er væk igen");
     }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> egui::Rect {

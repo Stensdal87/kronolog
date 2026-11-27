@@ -61,13 +61,39 @@ impl KronoLogApp {
         let rest = 16.0 + (shown.len() + 1) as f32 * 36.0 + if any_link { 26.0 } else { 0.0 };
         let label_chars = ((ui.available_width() - rest) / 6.0).max(8.0) as usize;
         let cell = |text: String| RichText::new(text).monospace().size(12.0);
+        // Timer (t:mm) eller kommatal (1,75) til fx Salesforce; højreklik kopierer
+        // altid kommatallet.
+        let separator = tr!("history.decimal_separator");
+        let decimal = self.data.week_decimal;
+        let shown_time = |d: Duration| if decimal { format_decimal_hours(d, &separator) } else { format_hours_minutes(d) };
+        let mut switch_format = false;
+        let mut copy = None;
+        // En tid eller total, der kan højreklikkes for at kopiere kommatallet.
+        let copyable = |ui: &mut egui::Ui, text: RichText, time: Duration, copy: &mut Option<String>| {
+            let hours = format_decimal_hours(time, &separator);
+            let response = ui
+                .add(egui::Label::new(text).sense(egui::Sense::click()))
+                .on_hover_text(tr!("week.copy_hint", hours = hours.as_str()));
+            if response.secondary_clicked() {
+                *copy = Some(hours);
+            }
+        };
 
         egui::ScrollArea::both().show(ui, |ui| {
             // Tiderne er knapper uden ramme; uden knappernes luft er der plads
             // til hele ugen i det smalle vindue.
             ui.spacing_mut().button_padding = Vec2::ZERO;
             egui::Grid::new("week").striped(true).spacing([8.0, 6.0]).min_col_width(0.0).show(ui, |ui| {
-                ui.label("");
+                // Hjørnet skifter mellem timer og kommatal og viser, hvad der vises nu.
+                let (format, hint) = if decimal {
+                    (format!("0{separator}00"), tr!("week.show_hours"))
+                } else {
+                    (tr!("week.format_hours"), tr!("week.show_decimal"))
+                };
+                let format = RichText::new(format).monospace().small().color(ACCENT);
+                if super::hover_button(ui, format).on_hover_text(hint).clicked() {
+                    switch_format = true;
+                }
                 for &d in &shown {
                     let date = monday + Duration::days(d as i64);
                     let mut name = RichText::new(day_names.get(d).copied().unwrap_or("")).small();
@@ -110,7 +136,7 @@ impl KronoLogApp {
                         };
                         day_totals[d] += time;
                         let state = self.data.billed_state(date, *project_id, time);
-                        let mut text = cell(format_hours_minutes(time));
+                        let mut text = cell(shown_time(time));
                         let hover = match state {
                             BilledState::No => tr!("week.click_to_bill"),
                             BilledState::Yes => {
@@ -122,15 +148,21 @@ impl KronoLogApp {
                                 tr!("week.billed_changed", old = format_hours_minutes(old))
                             }
                         };
-                        let hover = format!("{full}\n{}\n{hover}", date.format("%d-%m-%Y"));
-                        if super::hover_button(ui, text).on_hover_text(hover).clicked() {
+                        let hours = format_decimal_hours(time, &separator);
+                        let copy_hint = tr!("week.copy_hint", hours = hours.as_str());
+                        let hover = format!("{full}\n{}\n{hover}\n{copy_hint}", date.format("%d-%m-%Y"));
+                        let response = super::hover_button(ui, text).on_hover_text(hover);
+                        if response.clicked() {
                             // Ændret tid krydses af med den nye; ellers skiftes krydset.
                             let bill = state != BilledState::Yes;
                             toggle = Some((date, *project_id, bill.then_some(time)));
                         }
+                        if response.secondary_clicked() {
+                            copy = Some(hours);
+                        }
                     }
                     let total = row.iter().flatten().fold(Duration::zero(), |s, d| s + *d);
-                    ui.label(cell(format_hours_minutes(total)).strong());
+                    copyable(ui, cell(shown_time(total)).strong(), total, &mut copy);
                     // Link til fx Salesforce, hvor tiden skal registreres (#41).
                     if any_link {
                         match self.data.link_for(*project_id) {
@@ -183,7 +215,7 @@ impl KronoLogApp {
                             });
                             for &d in &shown {
                                 if d == day {
-                                    ui.label(cell(format_hours_minutes(e.duration())).weak());
+                                    ui.label(cell(shown_time(e.duration())).weak());
                                 } else {
                                     ui.label("");
                                 }
@@ -199,10 +231,10 @@ impl KronoLogApp {
 
                 ui.label(RichText::new(tr!("history.total")).weak().small());
                 for &d in &shown {
-                    ui.label(cell(format_hours_minutes(day_totals[d])).strong());
+                    copyable(ui, cell(shown_time(day_totals[d])).strong(), day_totals[d], &mut copy);
                 }
                 let week_total = day_totals.iter().fold(Duration::zero(), |s, d| s + *d);
-                ui.label(cell(format_hours_minutes(week_total)).strong());
+                copyable(ui, cell(shown_time(week_total)).strong(), week_total, &mut copy);
                 ui.end_row();
             });
             ui.add_space(6.0);
@@ -212,6 +244,13 @@ impl KronoLogApp {
         if let Some((date, project_id, time)) = toggle {
             self.data.set_billed(date, project_id, time);
             self.save();
+        }
+        if switch_format {
+            self.data.week_decimal = !self.data.week_decimal;
+            self.save();
+        }
+        if let Some(hours) = copy {
+            super::copy_with_notice(ui.ctx(), hours);
         }
         if let Some(date) = open_day {
             self.history_date = date;

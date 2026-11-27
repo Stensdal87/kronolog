@@ -267,6 +267,9 @@ pub struct Data {
     /// Menuen viser projektets tid denne uge i stedet for i alt (#38).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub day_panel_week: bool,
+    /// Ugeoversigten viser tiderne som kommatal (1,75) i stedet for t:mm.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub week_decimal: bool,
     /// Projektet, et opkald med en kontakt (navn med små bogstaver) sidst blev
     /// registreret på; foreslås næste gang (#39).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]

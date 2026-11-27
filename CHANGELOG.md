@@ -3,6 +3,12 @@
 Hvad der er nyt i hver version af KronoLog. Listen kan også ses i programmet
 under Indstillinger → "Hvad er nyt?".
 
+## 1.3.11 (2026-11-27)
+
+- Ugeoversigten kan vise tiderne som kommatal (fx 1,75) i stedet for t:mm: klik på "t:mm" i øverste venstre hjørne for at skifte
+- Højreklik på en tid eller en total i ugeoversigten kopierer den som kommatal, klar til at sætte ind i Salesforce, også når tiderne vises som t:mm
+- En lille besked ved musen viser, at tallet er kopieret, også når man klikker på kommatallet i Summeret
+
 ## 1.3.10 (2026-11-26)
 
 - Genkender KronoLog personen fra et tidligere Teams-opkald, udfyldes projektet fra sidst nu med det samme under "Registrér opkaldet på", og opkaldet registreres dér, når det slutter. Man kan ændre det undervejs

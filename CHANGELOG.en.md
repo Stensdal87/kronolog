@@ -3,6 +3,12 @@
 What is new in each version of KronoLog. The list can also be seen in the app
 under Settings → "What's new?".
 
+## 1.3.11 (2026-11-27)
+
+- The week view can show the times as decimals (e.g. 1.75) instead of h:mm: click "h:mm" in the top left corner to switch
+- Right-clicking a time or a total in the week view copies it as a decimal, ready to paste into Salesforce, also when the times are shown as h:mm
+- A small notice by the mouse shows that the number was copied, also when clicking the decimal in Summary
+
 ## 1.3.10 (2026-11-26)
 
 - When KronoLog recognizes the person from an earlier Teams call, the project from last time is now filled in right away under "Record the call on", and the call is registered there when it ends. You can change it during the call
